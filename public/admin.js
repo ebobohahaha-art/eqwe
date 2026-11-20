@@ -42,7 +42,7 @@ async function refresh() {
     const heading = document.createElement("h3");
     heading.textContent = `${customer.name}${customer.disabled ? " · Revoked" : ""}`;
     const detail = document.createElement("p");
-    detail.textContent = `ID: ${customer.id} · Granted: ${customer.granted} · Used: ${customer.used} · Reserved: ${customer.reserved ?? "0"} · Available: ${customer.remaining}`;
+    detail.textContent = `ID: ${customer.id} · Granted: ${customer.granted} · Used: ${customer.used} · Reserved: ${customer.reserved ?? "0"} · Live pending estimate: ${customer.pending ?? "0"} · Available: ${customer.remaining}`;
     card.append(heading, detail);
     for (const action of ["grant", "revoke"]) {
       const button = document.createElement("button");

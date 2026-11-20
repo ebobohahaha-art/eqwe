@@ -37,3 +37,11 @@ If inference is unavailable or your account check fails, Claude is not started.
 
 The model label is ApiDuck Fast, a gateway service rather than an Anthropic
 Claude model. Your account portal identifies the underlying provider.
+
+Keep claude-settings.json next to the launcher. It declares the custom model
+and a 100K working context for this session. It contains no key and
+does not change your global Claude configuration. Close any existing Claude
+session and start again through Start-ApiDuck.cmd to apply updated settings.
+Large requests still need to fit the gateway's enforced byte/cost bounds and your
+remaining credits. The context setting does not grant extra credits or guarantee
+that every 100K-token prompt fits a $0.20 allowance.

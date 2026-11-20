@@ -90,10 +90,10 @@ try {
     }
     $env:CLAUDE_CODE_MAX_OUTPUT_TOKENS = '4096'
     $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
-    $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = '32000'
-    $env:CLAUDE_CODE_AUTO_COMPACT_WINDOW = '20000'
+    $env:CLAUDE_CODE_MAX_CONTEXT_TOKENS = '100000'
+    $env:CLAUDE_CODE_AUTO_COMPACT_WINDOW = '100000'
     Write-Host "Connected through $baseUrl. Balance and revocation are enforced by the hosted gateway."
-    & $claudeCommand @ClaudeArgs
+    & $claudeCommand --settings (Join-Path $PSScriptRoot 'claude-settings.json') @ClaudeArgs
     if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Claude Code exited with code $LASTEXITCODE." }
 } finally {
     $customerKey = $null

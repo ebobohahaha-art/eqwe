@@ -50,8 +50,11 @@ not supported. Text and customer-executed tool turns are supported.
 
 ## Metering and verification
 
-Before contacting the paid provider, the server reserves a conservative bound
-for that request's input and output cost. It debits measured cost credits once.
+Before contacting the paid provider, the server counts the prompt with the
+official tokenizer and reserves its input cost plus affordable output. It streams
+live output, saves pending usage estimates every five seconds, and debits the
+provider-confirmed cumulative usage once. Apply the updated schema.sql before
+deploying the streaming update; it adds two pending-progress columns.
 Insufficient allowance prevents the call; ambiguous provider failures retain the
 reservation and require reconciliation. See [METERING.md](METERING.md).
 

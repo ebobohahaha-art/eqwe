@@ -44,3 +44,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS one_unsettled_request_per_customer
 -- Reconcile historical usage and outstanding holds before enabling the new policy.
 ALTER TABLE token_events ADD COLUMN IF NOT EXISTS credit_policy TEXT;
 ALTER TABLE token_events ADD COLUMN IF NOT EXISTS provider_cost_upper_nanodollars BIGINT;
+-- Pending stream progress is separate from final, provider-confirmed usage.
+ALTER TABLE token_reservations ADD COLUMN IF NOT EXISTS estimated_credits BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE token_reservations ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { priceUsage, requestReservation, CREDIT_POLICY } from '../lib/credit-pricing.mjs';
 import { prepareRequest } from '../lib/request-limits.mjs';
+import {countInput} from '../lib/exact-input.mjs';
 import { createMessagesHandler } from '../netlify/functions/messages.mjs';
 
 test('Cost credits price input, cache and output separately, always rounding upward', () => {
@@ -49,7 +50,7 @@ test('Hosted inference reserves cost credits, audits settlement, and blocks depl
     }});
     const body={model:scenario==='branded'?'apiduck-fast':'claude-opus',max_tokens:100,messages:[{role:'user',content:'hello'}]};
     const limits=prepareRequest(body);
-    const expectedReservation=requestReservation(limits.inputTokens,limits.outputTokens);
+    const expectedReservation=requestReservation(Math.min(limits.inputTokens,countInput(limits.upstream).inputTokens),limits.outputTokens);
     const response=await handler(new Request('https://gateway.test/v1/messages',{method:'POST',headers:{Authorization:`Bearer sk-gw-${'a'.repeat(64)}`},body:JSON.stringify(body)}));
     assert.equal(response.status,{normal:200,branded:200,depleted:402,revoked:401,pending:409,ambiguous:503}[scenario]);
     assert.equal(calls,['normal','branded','ambiguous'].includes(scenario)?1:0);

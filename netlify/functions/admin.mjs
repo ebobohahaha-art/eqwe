@@ -45,6 +45,7 @@ export default async function admin(req) {
     }
     if (req.method === "GET") {
       await database().query('SELECT credit_policy,provider_cost_upper_nanodollars FROM token_events LIMIT 0');
+      await database().query('SELECT estimated_credits,heartbeat_at FROM token_reservations LIMIT 0');
       const result = await database().query(`
         SELECT c.id, c.name, c.disabled, c.created_at,
           COALESCE(SUM(CASE WHEN e.kind='grant' THEN e.token_delta ELSE 0 END),0)::text AS granted,
@@ -52,7 +53,9 @@ export default async function admin(req) {
           (COALESCE(SUM(e.token_delta),0) - COALESCE((SELECT SUM(r.reserved_tokens)
             FROM token_reservations r WHERE r.customer_id=c.id AND r.status IN ('held','review')),0))::text AS remaining,
           COALESCE((SELECT SUM(r.reserved_tokens) FROM token_reservations r
-            WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS reserved
+            WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS reserved,
+          COALESCE((SELECT SUM(r.estimated_credits) FROM token_reservations r
+            WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS pending
         FROM customers c LEFT JOIN token_events e ON e.customer_id=c.id
         GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100`);
       return json({ customers: result.rows, limit: 100, inferenceMeteringEnabled: true, inference: await inferenceStatus() });

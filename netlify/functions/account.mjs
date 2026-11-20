@@ -25,6 +25,8 @@ export default async function account(req) {
           FROM token_reservations r WHERE r.customer_id=c.id AND r.status IN ('held','review')),0))::text AS remaining,
         COALESCE((SELECT SUM(r.reserved_tokens) FROM token_reservations r
           WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS reserved
+        ,COALESCE((SELECT SUM(r.estimated_credits) FROM token_reservations r
+          WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS pending
       FROM customers c LEFT JOIN token_events e ON e.customer_id = c.id
       WHERE c.key_hash = $1 AND c.disabled = FALSE
       GROUP BY c.id, c.name`, [hash]);
@@ -33,7 +35,7 @@ export default async function account(req) {
     const readiness = await inferenceStatus();
     return json({
       customer: { id: row.id, name: row.name },
-      tokens: { granted: row.granted, used: row.used, remaining: row.remaining, reserved: row.reserved, expires: null },
+      tokens: { granted: row.granted, used: row.used, remaining: row.remaining, reserved: row.reserved, pending:row.pending, expires: null },
       inferenceEnabled: readiness.ready,
       serviceStatus: { code: readiness.code, message: readiness.customerMessage },
       creditPolicy: CREDIT_POLICY,

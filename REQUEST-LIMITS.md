@@ -1,5 +1,10 @@
 # Enforced request bounds and automated tariff checks
 
+The streaming-billing update uses lib/exact-input.mjs and the pinned official
+tokenizer asset for reservations. The byte-bound derivation below remains a
+structural validation ceiling and fallback; it is no longer the amount charged
+or the sole estimate used to authorize a request.
+
 This replaces the manual MAX_PROVIDER_REQUEST_TOKENS and
 PROVIDER_PRICING_VERIFIED_AT gates. Neither variable authorizes provider calls
 anymore. CREDIT_POLICY defaults to deepseek-flash-cost-v1; a different explicit
@@ -7,23 +12,36 @@ policy value is rejected. INFERENCE_ENABLED=true is still the operator's switch.
 
 The gateway bounds requests before making a paid call:
 
-- Read at most 512000 raw bytes; accept at most 120000 canonical UTF-8 JSON bytes.
+- Read at most 512000 raw bytes; accept at most 350000 canonical UTF-8 JSON bytes.
 - Allow text, ordinary client tool definitions, assistant tool calls and text
   tool results. Reject media, remote documents, provider tools, stored thinking,
   image placeholders, excessive nesting, and oversized/complex conversations.
 - Strip other fields. Force DeepSeek Flash, thinking disabled, and nonstreaming
   upstream generation. Clamp max_tokens to 4096 even when the client asks for more.
-- Bound input as four times canonical bytes, plus 256 bytes per message/block/tool
-  or top-level tool argument, plus 8192 bytes of fixed formatting overhead. Refuse
+- Bound verbatim text by its UTF-8 bytes once and structured JSON by twice its
+  compact JSON bytes, plus 256 bytes per message/block/tool or top-level tool
+  argument, plus 8192 bytes of fixed formatting overhead. Refuse
   anything whose bound exceeds 500000 tokens. The conservative multipliers cover
   schema JSON spacing/escaping and DSML formatting; they are not cl100k estimates.
-- Reserve input at the uncached rate and output at its full requested/clamped
-  limit. Even the maximum permitted request reserves 9294912 credits, fitting a
+- Count the official rendered input, add a 2048-token protocol guard plus 64 per
+  message/tool, and use the smaller of this bound and the structural byte bound.
+  The tokenizer definition is SHA-pinned and counts all retained reference cases
+  identically to the official Rust/Python tokenizer.
+- Reserve this input at the uncached rate and choose an output token limit from
+  the remaining balance (at most the client's request and the 4096 server cap).
+  Even the maximum structural request reserves 9294912 credits, fitting a
   fresh 10M-credit key. Small requests reserve less. Refuse insufficient balances
-  before calling the provider; never shrink the reservation to force acceptance.
+  before calling the provider if input plus one output token cannot fit. Output
+  is genuinely reduced upstream when shrinking its reservation; the input bound
+  is never lowered to force acceptance.
 - Settle measured cost credits once. Uncertain failures retain their holds.
   A measured input/output bound violation freezes the account even if its cost
   happened to fit the conservative reservation.
+
+The terminal connector declares a 100K working context. The desktop app manages
+its own context and does not inherit terminal-only session settings. Requests
+with many desktop/MCP tool schemas are allowed when they fit the server bounds
+and remaining credits; no schema or system text is silently removed.
 
 Client context variables encourage early compaction; they are convenience only.
 Only the server's validated request and database reservation authorize spending.
@@ -45,9 +63,10 @@ Reference sources, reviewed 2026-11-20:
 - https://api-docs.deepseek.com/guides/anthropic_api/
 - https://api-docs.deepseek.com/quick_start/pricing/
 
-321 local cases were checked against the official encoder and tokenizer; 25
+322 local cases were checked against the official encoder and tokenizer; 26
 retained fixtures cover text, Unicode, escaped characters, tool schemas/calls,
-tool results and a near-limit prompt. All had actual tokens <= rendered bytes <=
+tool results, a large text prompt and a desktop-sized request with 103 client
+tools. All had actual tokens <= rendered bytes <=
 the enforced bound. These regressions support the derivation; they are not a
 promise about arbitrary future provider behavior or proof of live billing.
 

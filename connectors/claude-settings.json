@@ -1,0 +1,9 @@
+{
+  "env": {
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "100000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "100000",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION": "apiduck-fast",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "ApiDuck Fast",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "ApiDuck gateway service. Provider details are on your account portal."
+  }
+}

@@ -49,7 +49,8 @@ for (const [platform, scripts] of [
   ['windows', ['Start-ApiDuck.cmd', 'Start-ApiDuck.ps1', 'Key-Entry.ps1']],
   ['linux', ['start-apiduck.sh']],
 ]) {
-  const files = [['gateway-url.txt', `${url.origin}\n`], ['README.md', readme]];
+  const files = [['gateway-url.txt', `${url.origin}\n`], ['README.md', readme],
+    ['claude-settings.json', await readFile(join(root, 'connectors', 'claude-settings.json'), 'utf8')]];
   for (const script of scripts) {
     let content = await readFile(join(root, 'connectors', platform, script), 'utf8');
     content = content.replace(/\r\n/g, '\n');

@@ -22,7 +22,10 @@ test('Download ZIPs contain only allowlisted files, correct origin and valid che
       offset=start+size;
     }
     assert.equal(archive.readUInt32LE(offset),0x02014b50);
-    assert.equal(files.size,platform==='windows'?5:3);
+    assert.equal(files.size,platform==='windows'?6:4);
+    const settings=JSON.parse(files.get('claude-settings.json'));
+    assert.equal(settings.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS,'100000');
+    assert.equal(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,'100000');
     assert.equal(files.get('gateway-url.txt').trim(),new URL(process.env.PUBLIC_ORIGIN||'https://apily.netlify.app').origin);
     for(const content of files.values()) assert.doesNotMatch(content,/sk-admin-[a-f0-9]{64}|sk-gw-[a-f0-9]{64}|DEEPSEEK_API_KEY=/);
     for(const content of files.values()) assert.doesNotMatch(content,/deepseek/i);
@@ -79,6 +82,7 @@ test('Windows launcher configures only valid funded accounts and restores the or
   const temp=mkdtempSync(join(tmpdir(),'apiduck-connector-test-'));
   try {
     copyFileSync(join(root,'connectors/windows/Start-ApiDuck.ps1'),join(temp,'Start-ApiDuck.ps1'));
+    copyFileSync(join(root,'connectors/claude-settings.json'),join(temp,'claude-settings.json'));
     writeFileSync(join(temp,'Key-Entry.ps1'),String.raw`function Read-ApiDuckCustomerKey { param($Gateway) if($Gateway -ne 'https://gateway.test') {throw 'Wrong key dialog gateway'}; if($Scenario -eq 'cancel') {throw 'Cancelled'}; if($Scenario -eq 'invalid') {return 'bad-key'}; return ('sk-gw-'+('a'*64)) }`);
     writeFileSync(join(temp,'gateway-url.txt'),'https://gateway.test\n');
     const harness=String.raw`
@@ -104,7 +108,8 @@ function claude {
   if($env:ANTHROPIC_BASE_URL -ne 'https://gateway.test' -or $env:ANTHROPIC_AUTH_TOKEN -cne ('sk-gw-'+('a'*64))) {throw 'Wrong gateway'}
   if($env:ANTHROPIC_API_KEY -or $env:ANTHROPIC_MODEL -ne 'apiduck-fast' -or $env:CLAUDE_CODE_MAX_OUTPUT_TOKENS -ne '4096') {throw 'Wrong settings'}
   if($env:ANTHROPIC_DEFAULT_SONNET_MODEL_NAME -ne 'ApiDuck Fast') {throw 'Wrong display name'}
-  if($args[0] -ne '--version') {throw 'Lost CLI arguments'}
+  if($args[0] -ne '--settings' -or -not (Test-Path -LiteralPath $args[1]) -or $args[2] -ne '--version') {throw 'Lost CLI settings or arguments'}
+  if($env:CLAUDE_CODE_MAX_CONTEXT_TOKENS -ne '100000' -or $env:CLAUDE_CODE_AUTO_COMPACT_WINDOW -ne '100000') {throw 'Wrong context configuration'}
   $global:connectorLaunched=$true
 }
 $failed=$false

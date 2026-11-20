@@ -17,6 +17,7 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@huggingface/tokenizers": "0.2.0",
     "js-tiktoken": "^1.0.21",
     "pg": "^8.16.3"
   }

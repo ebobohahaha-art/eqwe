@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -86,7 +88,8 @@ export function createRenderServer(publicOrigin) {
         for (const [name, value] of response.headers) headers[name] = value;
         res.writeHead(response.status, headers);
         if (req.method === "HEAD") res.end();
-        else res.end(Buffer.from(await response.arrayBuffer()));
+        else if(response.body) await pipeline(Readable.fromWeb(response.body),res);
+        else res.end();
         return;
       }
       const entry = staticFiles.get(url.pathname);

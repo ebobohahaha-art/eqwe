@@ -9,6 +9,7 @@ if (localPreview) {
     $("granted").textContent = "10,000,000";
     $("used").textContent = "250,000";
     $("reserved").textContent = "0";
+    $("pending-usage").textContent = "0";
     $("remaining").textContent = "9,750,000";
     $("overview-remaining").textContent = "9,750,000";
     $("overview-granted").textContent = "10,000,000";
@@ -64,6 +65,7 @@ $("logout").onclick = () => {
   $("name").textContent = "";
   for (const field of ["granted", "used", "remaining"]) $(field).textContent = "";
   $("reserved").textContent = "";
+  $("pending-usage").textContent = "";
   $("usage-meter").value = 0;
   $("overview-meter").value = 0;
   $("usage-percent").textContent = "0%";
@@ -117,6 +119,7 @@ $("login").onsubmit = async (event) => {
       $(field).textContent = BigInt(data.tokens[field]).toLocaleString();
     }
     $("reserved").textContent = BigInt(data.tokens.reserved ?? "0").toLocaleString();
+    $("pending-usage").textContent = BigInt(data.tokens.pending ?? "0").toLocaleString();
     $("balance").hidden = false;
     $("balance-placeholder").hidden = true;
     $("preview-notice").hidden = true;
@@ -143,9 +146,11 @@ $("login").onsubmit = async (event) => {
     $("status").textContent = error.name === "TimeoutError" ? "Connection timed out." : error.message;
   } finally { pending = false; $("connect-button").disabled = false; }
 };
+let refreshingUsage=false;
 $("refresh-usage").onclick = async () => {
   const key = sessionKey;
-  if (!key) return;
+  if (!key || refreshingUsage) return;
+  refreshingUsage=true;
   $("refresh-usage").disabled = true;
   try {
     const response = await fetch("/api/account", {
@@ -166,11 +171,15 @@ $("refresh-usage").onclick = async () => {
     $("overview-remaining").textContent = BigInt(data.tokens.remaining).toLocaleString();
     $("overview-granted").textContent = BigInt(data.tokens.granted).toLocaleString();
     $("overview-used").textContent = BigInt(data.tokens.used).toLocaleString();
-    $("tracker-status").textContent = "Tracker refreshed from the server. Reservations are not final settled usage.";
+    $("pending-usage").textContent=BigInt(data.tokens.pending??"0").toLocaleString();
+    $("tracker-status").textContent = "Updated from the server. Live pending is an estimate; settled usage is the final charge.";
   } catch {
     if (key === sessionKey) $("tracker-status").textContent = "Refresh failed. The previous balance may be out of date.";
-  } finally { $("refresh-usage").disabled = false; }
+  } finally { refreshingUsage=false; $("refresh-usage").disabled = false; }
 };
+if(typeof setInterval==='function')setInterval(()=>{
+  if(sessionKey&&!document.hidden&&!pending&&!refreshingUsage)$("refresh-usage").onclick();
+},5000);
 // No localStorage, cookies, analytics, or key-in-URL login.
 const tierDescriptions = {
   fast: "Haiku preset · 1× credit weight: direct answers.",
