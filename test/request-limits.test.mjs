@@ -3,11 +3,26 @@ import assert from 'node:assert/strict';
 import { prepareRequest, readRequestBody, REQUEST_LIMITS } from '../lib/request-limits.mjs';
 import { createMessagesHandler } from '../netlify/functions/messages.mjs';
 import { readFileSync } from 'node:fs';
+import { requestReservation } from '../lib/credit-pricing.mjs';
 
 const base=()=>({model:'apiduck-fast',max_tokens:32000,messages:[{role:'user',content:'Hello'}]});
+test('Claude Code first-turn system role is moved to top-level instructions before provider validation',()=>{
+  const body={...base(),system:'Existing instructions',messages:[{role:'user',content:'Hello'},
+    {role:'system',content:[{type:'text',text:'Session context',cache_control:{type:'ephemeral'}}]}]};
+  const prepared=prepareRequest(body);
+  assert.deepEqual(prepared.upstream.messages,[{role:'user',content:'Hello'}]);
+  assert.deepEqual(prepared.upstream.system,[{type:'text',text:'Existing instructions'},{type:'text',text:'Session context'}]);
+  assert.ok(prepared.inputTokens>=Buffer.byteLength(prepared.serialized));
+  const fromString=prepareRequest({...base(),messages:[{role:'system',content:'First'},{role:'user',content:'Hello'},{role:'system',content:'Last'}]});
+  assert.deepEqual(fromString.upstream.system,[{type:'text',text:'First'},{type:'text',text:'Last'}]);
+  assert.throws(()=>prepareRequest({...base(),messages:[{role:'system',content:'Only instructions'}]}),/At least one/);
+  assert.throws(()=>prepareRequest({...base(),messages:[{role:'developer',content:'Unsupported role'}]}),/Invalid message role/);
+  assert.throws(()=>prepareRequest({...base(),messages:[{role:'user',content:'Hello'},{role:'system',content:[{type:'image'}]}]}),/Only text/);
+  assert.throws(()=>prepareRequest({...base(),messages:[{role:'user',content:'Hello'},{role:'system',content:'X'.repeat(360000)}]}),e=>e.status===413);
+});
 test('Request bounds exceed official Flash-1017 encoder bytes and tokenizer counts for retained reference cases',()=>{
   const reference=JSON.parse(readFileSync(new URL('./fixtures/request-bound-reference.json',import.meta.url),'utf8'));
-  assert.equal(reference.casesChecked,321);
+  assert.ok(reference.casesChecked>=321);
   for(const row of reference.cases) {
     const prepared=prepareRequest(row.body);
     assert.ok(prepared.inputTokens>=row.referenceEncodedBytes);
@@ -29,10 +44,23 @@ test('Server clamps output, normalizes supported tool turns and ignores unsafe c
   assert.ok(prepared.inputTokens<REQUEST_LIMITS.inputTokens);
   assert.equal(JSON.parse(prepared.serialized).max_tokens,4096);
 });
+test('Desktop-sized system context and 103 client tools fit a fresh 10M-credit package',()=>{
+  const body={...base(),system:'Existing system context. '.repeat(3500),messages:[{role:'user',content:'yo'}],
+    tools:Array.from({length:103},(_,i)=>({name:`mcp__test__tool_${i}`,description:'Detailed local client tool instructions. '.repeat(20),
+      input_schema:{type:'object',properties:Object.fromEntries(Array.from({length:5},(_,j)=>[`field_${j}`,{type:'string',description:'Client tool input value.'}]))}}))};
+  const prepared=prepareRequest(body);
+  assert.ok(Buffer.byteLength(prepared.serialized)>120000,'Exercise the old desktop size failure');
+  assert.equal(prepared.upstream.tools.length,103);
+  assert.equal(prepared.upstream.system[0].text,body.system);
+  assert.ok(prepared.inputTokens<=500000);
+  assert.ok(requestReservation(prepared.inputTokens,prepared.outputTokens)<=10000000);
+  // No schema, tool or system instruction is dropped to squeeze the request in.
+  assert.deepEqual(prepared.upstream.tools,body.tools);
+});
 test('Images, documents, server tools, media placeholders and oversized/deep requests are rejected',()=>{
   const cases=[null,{...base(),tools:{}},{...base(),tools:[{type:'web_search',name:'search',input_schema:{}}]},
     {...base(),messages:Array.from({length:257},()=>({role:'user',content:'x'}))},
-    {...base(),messages:[{role:'user',content:'x'.repeat(130000)}]},
+    {...base(),messages:[{role:'user',content:'x'.repeat(360000)}]},
     {...base(),messages:[{role:'user',content:'<image>https://untrusted.test/huge.png</image>'}]},
     ...['image','document','server_tool_use','thinking'].map(type=>({...base(),messages:[{role:'user',content:[{type,source:{type:'url',url:'https://untrusted.test'}}]}]})),
     {...base(),messages:[{role:'user',content:[{type:'tool_result',tool_use_id:'tool_1',content:[{type:'image'}]}]}]},
@@ -51,7 +79,7 @@ test('Invalid requests and unverified tariffs never contact the paid provider or
   t.after(()=>{for(const[n,v]of Object.entries(before)){if(v===undefined)delete process.env[n];else process.env[n]=v;}});
   Object.assign(process.env,{INFERENCE_ENABLED:'true',DEEPSEEK_API_KEY:'dummy-provider',CREDIT_POLICY:'deepseek-flash-cost-v1'});
   const handler=createMessagesHandler({getDatabase:()=>{throw new Error('DB must not be called');},providerFetch:async()=>{throw new Error('Paid provider must not be called');},verifyPrices:async()=>({ready:false})});
-  for(const[body,status]of [[base(),503],[{...base(),messages:[{role:'user',content:'x'.repeat(130000)}]},413]]) {
+  for(const[body,status]of [[base(),503],[{...base(),messages:[{role:'user',content:'x'.repeat(360000)}]},413]]) {
     const response=await handler(new Request('https://gateway.test/v1/messages',{method:'POST',headers:{Authorization:`Bearer sk-gw-${'a'.repeat(64)}`},body:JSON.stringify(body)}));
     assert.equal(response.status,status);
   }
