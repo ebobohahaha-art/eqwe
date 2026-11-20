@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const url = new URL(process.env.PUBLIC_ORIGIN || process.env.URL || process.env.RENDER_EXTERNAL_URL || 'https://camoso.netlify.app');
+const url = new URL(process.env.PUBLIC_ORIGIN || 'https://apily.netlify.app');
 if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
   throw new Error('PUBLIC_ORIGIN must be an HTTPS origin without path or credentials');
 }
@@ -46,7 +46,7 @@ await mkdir(output, { recursive: true });
 const readme = await readFile(join(root, 'connectors', 'README.md'), 'utf8');
 const sums = [];
 for (const [platform, scripts] of [
-  ['windows', ['Start-ApiDuck.cmd', 'Start-ApiDuck.ps1']],
+  ['windows', ['Start-ApiDuck.cmd', 'Start-ApiDuck.ps1', 'Key-Entry.ps1']],
   ['linux', ['start-apiduck.sh']],
 ]) {
   const files = [['gateway-url.txt', `${url.origin}\n`], ['README.md', readme]];

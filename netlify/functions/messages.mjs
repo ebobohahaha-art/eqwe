@@ -76,6 +76,8 @@ return async function messages(req) {
     const priced = priceUsage(message.usage);
     const settlement = await settleTokens(getDatabase(), reservation, priced.credits, priced);
     if (settlement.overrun) return failure("Provider exceeded the verified ceiling. Account frozen for reconciliation.", 503);
+    // Preserve the public API alias requested by branded gateway clients.
+    if (body.model === 'apiduck-fast') message.model = 'apiduck-fast';
     const headers = {
       "Cache-Control": "no-store", "X-Gateway-Provider-Tokens-Used": String(actual),
       "X-Gateway-Credits-Used": String(priced.credits),

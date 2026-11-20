@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { database } from "../../lib/db.mjs";
 import { authorizeAdmin } from "../../lib/admin-auth.mjs";
 import { mintKey, keyHash, positiveTokens } from "../../lib/keys.mjs";
+import { inferenceStatus } from "../../lib/inference-status.mjs";
 
 const json = (body, status = 200) => Response.json(body, {
   status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
@@ -39,6 +40,9 @@ export default async function admin(req) {
   if (auth !== 200) return json({ error: authFailure(auth) }, auth);
   if (!["GET", "POST"].includes(req.method)) return json({ error: "Method not allowed" }, 405);
   try {
+    if (req.method === "GET" && new URL(req.url).searchParams.get('view') === 'readiness') {
+      return json({ inference: inferenceStatus(), databaseConfigured: Boolean(process.env.DATABASE_URL) });
+    }
     if (req.method === "GET") {
       const result = await database().query(`
         SELECT c.id, c.name, c.disabled, c.created_at,
@@ -50,7 +54,7 @@ export default async function admin(req) {
             WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS reserved
         FROM customers c LEFT JOIN token_events e ON e.customer_id=c.id
         GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100`);
-      return json({ customers: result.rows, limit: 100, inferenceMeteringEnabled: false });
+      return json({ customers: result.rows, limit: 100, inferenceMeteringEnabled: false, inference: inferenceStatus() });
     }
     // Bounded body; never log its content, Authorization, or newly issued keys.
     const text = await req.text();

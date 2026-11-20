@@ -52,7 +52,7 @@ without moving secrets into the browser.
 6. Redeploy after setting variables. Netlify assigns an HTTPS `<your-site>.netlify.app` address.
    An example address is not owned or published until you create that project.
    Do not use drag-and-drop of `public` alone: it would omit the API functions.
-7. Open the assigned HTTPS URL. `apiduh.netlify.app` is already the intended API host.
+7. Open the assigned HTTPS URL. `apily.netlify.app` is already the intended API host.
 
 The GitHub repository does not provision PostgreSQL or populate Netlify
 environment variables. Do not set `INFERENCE_ENABLED=true` merely to make
@@ -91,7 +91,7 @@ zero until real usage events are implemented; this is not a billing test.
 
 ## ApiDuck Claude Code connector downloads
 
-The website's Windows/Linux connector launchers target `https://apiduh.netlify.app`.
+The website's Windows/Linux connector launchers target `https://apily.netlify.app`.
 They prompt for each customer's `sk-gw-…` key and do not save it or contain any
 provider key. They require the customer to install Claude Code separately.
 
@@ -107,7 +107,7 @@ Set the shared DeepSeek provider key as `DEEPSEEK_API_KEY` in Netlify's
 **server-side Functions environment only**. Do not put it in `public/`, client
 JavaScript, GitHub, or any download. Claude Code sends the customer's `sk-gw-…`
 key to the hosted API; the server validates the account and privately calls
-DeepSeek. The API host is `https://apiduh.netlify.app`.
+DeepSeek. The API host is `https://apily.netlify.app`.
 
 The live route will still reject requests until PostgreSQL/schema and the
 validated reservation ceiling are configured, and `INFERENCE_ENABLED=true` is

@@ -5,6 +5,7 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  PUBLIC_ORIGIN = "https://apily.netlify.app"
 
 [functions]
   node_bundler = "esbuild"

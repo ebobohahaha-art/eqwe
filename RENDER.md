@@ -43,11 +43,11 @@ This does not require Netlify production deploy credits.
 ## Important limitations
 
 - Render **does not inherit** Netlify environment variables or your Netlify
-  domain. Move the `apiduh.netlify.app` custom domain only after you have
+  domain. Move the `apily.netlify.app` custom domain only after you have
   verified the Render service; a `*.netlify.app` address itself cannot be moved
   to Render. Until then, use the new Render URL.
 - The Windows/Linux connector launchers currently target
-  `https://apiduh.netlify.app`. Update their base URL and publish new connector
+  `https://apily.netlify.app`. Update their base URL and publish new connector
   assets before telling customers they use the Render service.
 - The login UI makes relative same-origin requests, so it works on the new
   Render origin. Provider keys stay server-side and are never embedded in HTML

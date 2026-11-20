@@ -122,11 +122,11 @@ $("login").onsubmit = async (event) => {
     $("preview-notice").hidden = true;
     $("connection-label").textContent = "Account connected";
     updateUsageShare(data.tokens.granted, data.tokens.used, data.tokens.remaining);
-    $("status").textContent = data.inferenceEnabled ? "Connected. Hosted main-provider route is enabled." : "Connected. Hosted inference is disabled.";
+    $("status").textContent = data.inferenceEnabled ? "Connected. Hosted main-provider route is enabled." : (data.serviceStatus?.message || "Connected. Hosted inference is disabled.");
     $("inference-status").textContent = data.inferenceEnabled ? "Enabled" : "Unavailable";
     $("connection-copy").textContent = data.inferenceEnabled ?
-      "Hosted messages are enabled. The launcher is not published yet." :
-      "Hosted connection is not ready yet.";
+      "Hosted messages are enabled. Download the connector from Connect to start." :
+      (data.serviceStatus?.message || "Hosted connection is not ready yet.");
     $("overview-remaining").textContent = BigInt(data.tokens.remaining).toLocaleString();
     $("overview-granted").textContent = BigInt(data.tokens.granted).toLocaleString();
     $("overview-used").textContent = BigInt(data.tokens.used).toLocaleString();

@@ -33,6 +33,8 @@ async function api(body) {
 }
 async function refresh() {
   const data = await api();
+  $("service-readiness").textContent = data.inference ? (data.inference.ready ? 'Gateway configuration ready. Live operation still needs validation.' :
+    'Gateway setup required: ' + data.inference.issues.map((issue) => `${issue.code}: ${issue.message}`).join(' ')) : 'Redeploy the latest gateway to see configuration diagnostics.';
   $("customer-list").replaceChildren();
   for (const customer of data.customers) {
     const card = document.createElement("article");

@@ -1,6 +1,7 @@
 import { database } from "../../lib/db.mjs";
 import { keyHash } from "../../lib/keys.mjs";
-import { assertPricingVerified, CREDIT_POLICY } from "../../lib/credit-pricing.mjs";
+import { CREDIT_POLICY } from "../../lib/credit-pricing.mjs";
+import { inferenceStatus } from "../../lib/inference-status.mjs";
 
 function json(body, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -29,13 +30,12 @@ export default async function account(req) {
       GROUP BY c.id, c.name`, [hash]);
     const row = result.rows[0];
     if (!row) return json({ error: "Invalid or revoked customer key" }, 401);
-    let pricingReady = false;
-    try { assertPricingVerified(); pricingReady = true; } catch {}
+    const readiness = inferenceStatus();
     return json({
       customer: { id: row.id, name: row.name },
       tokens: { granted: row.granted, used: row.used, remaining: row.remaining, reserved: row.reserved, expires: null },
-      inferenceEnabled: process.env.INFERENCE_ENABLED === "true" && pricingReady && Boolean(process.env.DEEPSEEK_API_KEY)
-        && Number.isSafeInteger(Number(process.env.MAX_PROVIDER_REQUEST_TOKENS)) && Number(process.env.MAX_PROVIDER_REQUEST_TOKENS) > 0,
+      inferenceEnabled: readiness.ready,
+      serviceStatus: { code: readiness.code, message: readiness.customerMessage },
       creditPolicy: CREDIT_POLICY,
       note: "Balances are internal ApiDuck credits, not provider tokens. 10M credits represent a $0.20 provider-cost allowance at the verified price bounds. Outstanding reservations are excluded.",
     });

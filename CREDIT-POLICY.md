@@ -28,9 +28,8 @@ Deployment:
 
 1. Keep INFERENCE_ENABLED=false. Apply schema.sql. Reconcile old raw-token usage
    and outstanding holds before converting existing balances to credits.
-2. Use PUBLIC_ORIGIN=https://camoso.netlify.app. The supplied long deploy-id URL
-   pins an older deployment; the stable hostname follows new releases. Netlify's
-   URL environment variable is the fallback when PUBLIC_ORIGIN is absent.
+2. Use PUBLIC_ORIGIN=https://apily.netlify.app. This is also the connector default.
+   Set PUBLIC_ORIGIN only when intentionally releasing for a different domain.
 3. Configure server-only DATABASE_URL, DEEPSEEK_API_KEY and ADMIN_ACCESS_KEY.
 4. Set CREDIT_POLICY=deepseek-flash-cost-v1. After actually rechecking prices, set
    PROVIDER_PRICING_VERIFIED_AT to that UTC ISO timestamp. Verification expires

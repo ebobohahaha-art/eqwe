@@ -16,7 +16,7 @@ if command -v xdg-open >/dev/null 2>&1; then
 elif command -v open >/dev/null 2>&1; then
   open "$base_url/#downloads" >/dev/null 2>&1 &
 fi
-read -r -s -p 'Enter your customer API key (sk-gw-...): ' customer_key
+read -r -p 'Paste your customer key (visible; Ctrl+Shift+V in most terminals): ' customer_key
 printf '\n'
 trap 'unset customer_key ANTHROPIC_AUTH_TOKEN' EXIT
 if [[ ! "$customer_key" =~ ^sk-gw-[a-f0-9]{64}$ ]]; then
@@ -36,9 +36,13 @@ process.stdin.on("end", () => { try {
 fi
 unset ANTHROPIC_API_KEY ANTHROPIC_CUSTOM_HEADERS
 export ANTHROPIC_BASE_URL="$base_url" ANTHROPIC_AUTH_TOKEN="$customer_key"
-export ANTHROPIC_MODEL=deepseek-flash ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-flash
-export ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-flash ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-flash
-export CLAUDE_CODE_SUBAGENT_MODEL=deepseek-flash CLAUDE_CODE_MAX_OUTPUT_TOKENS=4096
+export ANTHROPIC_MODEL=apiduck-fast ANTHROPIC_DEFAULT_OPUS_MODEL=apiduck-fast
+export ANTHROPIC_DEFAULT_SONNET_MODEL=apiduck-fast ANTHROPIC_DEFAULT_HAIKU_MODEL=apiduck-fast
+export CLAUDE_CODE_SUBAGENT_MODEL=apiduck-fast CLAUDE_CODE_MAX_OUTPUT_TOKENS=4096
+export ANTHROPIC_DEFAULT_OPUS_MODEL_NAME='ApiDuck Fast' ANTHROPIC_DEFAULT_SONNET_MODEL_NAME='ApiDuck Fast' ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME='ApiDuck Fast'
+export ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION='ApiDuck gateway service. Provider details are on your account portal.'
+export ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION="$ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION="$ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 unset customer_key
 echo "Connected through $base_url. Your allowance is enforced by the hosted gateway."
