@@ -18,7 +18,7 @@ test('Claude Code first-turn system role is moved to top-level instructions befo
   assert.throws(()=>prepareRequest({...base(),messages:[{role:'system',content:'Only instructions'}]}),/At least one/);
   assert.throws(()=>prepareRequest({...base(),messages:[{role:'developer',content:'Unsupported role'}]}),/Invalid message role/);
   assert.throws(()=>prepareRequest({...base(),messages:[{role:'user',content:'Hello'},{role:'system',content:[{type:'image'}]}]}),/Only text/);
-  assert.throws(()=>prepareRequest({...base(),messages:[{role:'user',content:'Hello'},{role:'system',content:'X'.repeat(360000)}]}),e=>e.status===413);
+  assert.throws(()=>prepareRequest({...base(),messages:[{role:'user',content:'Hello'},{role:'system',content:'X'.repeat(3500001)}]}),e=>e.status===413);
 });
 test('Request bounds exceed official Flash-1017 encoder bytes and tokenizer counts for retained reference cases',()=>{
   const reference=JSON.parse(readFileSync(new URL('./fixtures/request-bound-reference.json',import.meta.url),'utf8'));
@@ -59,8 +59,8 @@ test('Desktop-sized system context and 103 client tools fit a fresh 10M-credit p
 });
 test('Images, documents, server tools, media placeholders and oversized/deep requests are rejected',()=>{
   const cases=[null,{...base(),tools:{}},{...base(),tools:[{type:'web_search',name:'search',input_schema:{}}]},
-    {...base(),messages:Array.from({length:257},()=>({role:'user',content:'x'}))},
-    {...base(),messages:[{role:'user',content:'x'.repeat(360000)}]},
+    {...base(),messages:Array.from({length:1025},()=>({role:'user',content:'x'}))},
+    {...base(),messages:[{role:'user',content:'x'.repeat(3500001)}]},
     {...base(),messages:[{role:'user',content:'<image>https://untrusted.test/huge.png</image>'}]},
     ...['image','document','server_tool_use','thinking'].map(type=>({...base(),messages:[{role:'user',content:[{type,source:{type:'url',url:'https://untrusted.test'}}]}]})),
     {...base(),messages:[{role:'user',content:[{type:'tool_result',tool_use_id:'tool_1',content:[{type:'image'}]}]}]},
@@ -70,7 +70,7 @@ test('Images, documents, server tools, media placeholders and oversized/deep req
   for(const body of cases)assert.throws(()=>prepareRequest(body),e=>[400,413].includes(e.status));
 });
 test('Raw body size is enforced while reading, before JSON parsing',async()=>{
-  const req=new Request('https://gateway.test/v1/messages',{method:'POST',body:'X'.repeat(512001)});
+  const req=new Request('https://gateway.test/v1/messages',{method:'POST',body:'X'.repeat(4000001)});
   await assert.rejects(readRequestBody(req),e=>e.status===413);
 });
 
@@ -79,7 +79,7 @@ test('Invalid requests and unverified tariffs never contact the paid provider or
   t.after(()=>{for(const[n,v]of Object.entries(before)){if(v===undefined)delete process.env[n];else process.env[n]=v;}});
   Object.assign(process.env,{INFERENCE_ENABLED:'true',DEEPSEEK_API_KEY:'dummy-provider',CREDIT_POLICY:'deepseek-flash-cost-v1'});
   const handler=createMessagesHandler({getDatabase:()=>{throw new Error('DB must not be called');},providerFetch:async()=>{throw new Error('Paid provider must not be called');},verifyPrices:async()=>({ready:false})});
-  for(const[body,status]of [[base(),503],[{...base(),messages:[{role:'user',content:'x'.repeat(360000)}]},413]]) {
+  for(const[body,status]of [[base(),503],[{...base(),messages:[{role:'user',content:'x'.repeat(3500001)}]},413]]) {
     const response=await handler(new Request('https://gateway.test/v1/messages',{method:'POST',headers:{Authorization:`Bearer sk-gw-${'a'.repeat(64)}`},body:JSON.stringify(body)}));
     assert.equal(response.status,status);
   }

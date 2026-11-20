@@ -45,6 +45,25 @@ function provider(){
 }
 const waitFor=async check=>{const start=Date.now();while(!check()){if(Date.now()-start>2000)throw new Error('checkpoint timeout');await new Promise(r=>setTimeout(r,2));}};
 
+test('Large MCP result survives the full messages handler and the next tool call is returned',async t=>{
+  environment(t);const {state,db}=ledger();
+  const result='Scene mesh vertices and materials. '.repeat(20000);
+  const request={...body(),tools:[{name:'mcp__blender__execute_code',description:'Run Blender Python',input_schema:{type:'object',properties:{code:{type:'string'}}}}],
+    messages:[{role:'user',content:'Build the model in Blender'},
+    {role:'assistant',content:[{type:'tool_use',id:'scene_1',name:'mcp__blender__execute_code',input:{code:'inspect_scene()'}}]},
+    {role:'user',content:[{type:'tool_result',tool_use_id:'scene_1',content:result}]}]};
+  const handler=createMessagesHandler({getDatabase:()=>db,verifyPrices:async()=>({ready:true}),providerFetch:async(url,options)=>{
+    const sent=JSON.parse(options.body);
+    assert.equal(sent.messages[2].content[0].content,result);
+    assert.equal(sent.tools[0].name,'mcp__blender__execute_code');
+    return Response.json({type:'message',content:[{type:'tool_use',id:'build_1',name:'mcp__blender__execute_code',input:{code:'build_model()'}}],stop_reason:'tool_use',usage:{input_tokens:1000,output_tokens:30}});
+  }});
+  const response=await handler(new Request('https://gateway.test/v1/messages',{method:'POST',headers,body:JSON.stringify(request)}));
+  assert.equal(response.status,200);
+  const events=await response.text();assert.match(events,/build_model/);assert.match(events,/"stop_reason":"tool_use"/);
+  assert.equal(state.debits.length,1);assert.equal(state.disabled,false);
+});
+
 test('Live text arrives before final billing; periodic pending checkpoints do not double-charge cumulative usage',async t=>{
   environment(t);const {state,db}=ledger(),upstream=provider();
   const handler=createMessagesHandler({getDatabase:()=>db,verifyPrices:async()=>({ready:true}),providerFetch:upstream.fetch,checkpointIntervalMs:10});

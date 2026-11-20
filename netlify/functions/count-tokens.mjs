@@ -1,13 +1,15 @@
 import { database } from "../../lib/db.mjs";
 import { keyHash } from "../../lib/keys.mjs";
-import { countMessageTokens } from "../../lib/token-count.mjs";
+import { prepareRequest, readRequestBody } from "../../lib/request-limits.mjs";
+import { countInput } from "../../lib/exact-input.mjs";
 
 const json = (body, status = 200) => Response.json(body, {
   status,
   headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
 });
 
-export default async function countTokens(req) {
+export function createCountTokensHandler({ getDatabase = database } = {}) {
+return async function countTokens(req) {
   if (req.method !== "POST") return json({ error: "POST required" }, 405);
   if (new URL(req.url).protocol !== "https:") return json({ error: "HTTPS required" }, 400);
 
@@ -21,28 +23,31 @@ export default async function countTokens(req) {
   }
 
   try {
-    const customer = await database().query(
+    const customer = await getDatabase().query(
       "SELECT id FROM customers WHERE key_hash=$1 AND disabled=FALSE", [hash]);
     if (!customer.rowCount) return json({ error: "Invalid or revoked customer key" }, 401);
 
-    const raw = await req.text();
-    if (Buffer.byteLength(raw) > 512_000) return json({ error: "Request body too large" }, 413);
+    const raw = await readRequestBody(req);
     let body;
     try { body = JSON.parse(raw); } catch { return json({ error: "Invalid JSON" }, 400); }
     if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "Invalid request body" }, 400);
 
-    return new Response(JSON.stringify({ input_tokens: countMessageTokens(body) }), {
+    const prepared = prepareRequest({...body,max_tokens:1});
+    return new Response(JSON.stringify({ input_tokens: countInput(prepared.upstream).inputTokens }), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
-        "X-Gateway-Tokenizer": "cl100k_base-estimate",
+        "X-Gateway-Tokenizer": "deepseek-flash-1017-with-guard",
       },
     });
-  } catch {
+  } catch (error) {
+    if (error.status) return json({error:error.message},error.status);
     return json({ error: "Token-count service unavailable. Check database configuration." }, 503);
   }
 }
+}
+export default createCountTokensHandler();
 
 export const config = { path: "/v1/messages/count_tokens" };

@@ -2,7 +2,7 @@ import { database } from "../../lib/db.mjs";
 import { keyHash } from "../../lib/keys.mjs";
 import { reserveTokens, settleTokens, measuredUsage, checkpointTokens } from "../../lib/quota.mjs";
 import { CREDIT_POLICY, priceUsage, requestReservation, inputReservation, OUTPUT_CREDITS_PER_TOKEN } from "../../lib/credit-pricing.mjs";
-import { prepareRequest, readRequestBody } from "../../lib/request-limits.mjs";
+import { prepareRequest, readRequestBody, REQUEST_LIMITS } from "../../lib/request-limits.mjs";
 import { verifiedProviderPrices } from "../../lib/provider-prices.mjs";
 import { countInput } from "../../lib/exact-input.mjs";
 import { consumeProviderStream, encodeEvent } from "../../lib/provider-stream.mjs";
@@ -53,6 +53,7 @@ return async function messages(req) {
     try { body = JSON.parse(raw); } catch { return failure("Invalid JSON", 400); }
     const prepared = prepareRequest(body);
     const counted=countInput(prepared.upstream);
+    if (counted.inputTokens > REQUEST_LIMITS.inputTokens) return failure('Conversation exceeds the 500000-token gateway input limit. Compact the conversation or shorten tool output.',400);
     prepared.inputTokens=Math.min(prepared.inputTokens,counted.inputTokens);
     const creditCeiling = requestReservation(prepared.inputTokens, prepared.outputTokens);
     const prices = await verifyPrices();

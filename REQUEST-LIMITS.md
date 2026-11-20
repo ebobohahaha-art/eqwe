@@ -12,19 +12,20 @@ policy value is rejected. INFERENCE_ENABLED=true is still the operator's switch.
 
 The gateway bounds requests before making a paid call:
 
-- Read at most 512000 raw bytes; accept at most 350000 canonical UTF-8 JSON bytes.
+- Read at most 4000000 raw bytes; accept at most 3500000 canonical UTF-8 JSON bytes.
 - Allow text, ordinary client tool definitions, assistant tool calls and text
   tool results. Reject media, remote documents, provider tools, stored thinking,
   image placeholders, excessive nesting, and oversized/complex conversations.
-- Strip other fields. Force DeepSeek Flash, thinking disabled, and nonstreaming
+- Strip other fields. Force DeepSeek Flash, thinking disabled, and streaming
   upstream generation. Clamp max_tokens to 4096 even when the client asks for more.
 - Bound verbatim text by its UTF-8 bytes once and structured JSON by twice its
   compact JSON bytes, plus 256 bytes per message/block/tool or top-level tool
-  argument, plus 8192 bytes of fixed formatting overhead. Refuse
-  anything whose bound exceeds 500000 tokens. The conservative multipliers cover
+  argument, plus 8192 bytes of fixed formatting overhead. This is a fallback
+  billing bound, not a context rejection threshold. The conservative multipliers cover
   schema JSON spacing/escaping and DSML formatting; they are not cl100k estimates.
 - Count the official rendered input, add a 2048-token protocol guard plus 64 per
-  message/tool, and use the smaller of this bound and the structural byte bound.
+  message/tool. Reject guarded counts above 500000 before a paid call, and use
+  the smaller of the guarded count and structural byte bound for reservation.
   The tokenizer definition is SHA-pinned and counts all retained reference cases
   identically to the official Rust/Python tokenizer.
 - Reserve this input at the uncached rate and choose an output token limit from
@@ -82,3 +83,6 @@ The model-provider contract remains a dependency. A price change during the
 five-minute cache window or a provider violating documented limits can incur
 unexpected costs; the tariff margin and account freeze reduce exposure but cannot
 undo an already accepted provider charge. Hosting/payment fees are separate.
+
+## V5 tool sessions
+Messages and count_tokens share a 4 MB raw request cap and 3.5 MB normalized cap. The official tokenizer plus guard enforces the 500000 input-token ceiling before billing; a UTF-8 byte upper bound no longer rejects valid context. History supports 1024 messages and 256 tools. No tool results are silently truncated. The existing per-key cost reservation, output ceiling, and settlement policy remain enforced. Tool sessions receive additional instructions to inspect/discover integrations, execute authorized work, and verify results without inventing capabilities.
