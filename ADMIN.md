@@ -40,5 +40,8 @@ There is no public endpoint to create or grant access without admin authorizatio
 
 Customer-key revocation and account display work against this cloud database.
 The existing local gateway is NOT connected to it. Inference reservation,
-actual provider-cost settlement and token-limit enforcement remain unimplemented.
-Do not advertise these account grants as enforced API quotas yet.
+actual provider-cost settlement and request enforcement are implemented by the
+hosted route. Read CREDIT-POLICY.md and REQUEST-LIMITS.md for the current cost-credit
+policy and its deployment requirements. The manual price timestamp and provider
+request-ceiling settings are obsolete; Gateway setup checks configuration and
+automatic provider-tariff verification.

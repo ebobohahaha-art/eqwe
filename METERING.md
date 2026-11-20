@@ -1,82 +1,39 @@
-**Connector/cost-credit update:** Read [CREDIT-POLICY.md](CREDIT-POLICY.md) first. Balances now mean internal cost credits. Build with `npm run build`. Earlier raw-token descriptions below are historical and do not describe the new debit policy.
+# Hosted cost-credit metering
 
-# Hosted token enforcement — test before launch
+Customer keys and balances are enforced by the hosted PostgreSQL ledger. A
+connector contains only the public HTTPS gateway URL. Customers enter their own
+sk-gw key. Provider/admin/database credentials never enter the browser or ZIP.
 
-## Why this is on the server
+The server authenticates the key, rejects revocation, bounds each text/client-tool
+request, automatically checks the provider tariff/model version, and reserves
+its maximum conservative cost before generation. It settles measured usage once
+before returning JSON or buffered SSE. Uncertain outcomes retain their hold and
+block further calls pending reconciliation. Never delete ambiguous holds blindly.
 
-The downloadable app must contain only the customer's `sk-gw-…` key and your HTTPS
-URL. A local counter can be edited or deleted, so it never authorizes requests.
-Every hosted `/v1/messages` call authenticates the key, checks revocation, and uses
-the customer's persistent PostgreSQL ledger. A copied key shares that same balance.
-Changing/reinstalling a client cannot reset it.
+10M credits are a $0.20 model-cost allowance, not raw provider tokens. Input,
+cached input and output have different credit charges. Read [CREDIT-POLICY.md](CREDIT-POLICY.md)
+and [REQUEST-LIMITS.md](REQUEST-LIMITS.md) for rates, limits and operational details.
 
-## Current implementation
+Manual provider-price timestamps and request-ceiling environment variables are
+obsolete. The enabled service requires its database/schema and provider key,
+INFERENCE_ENABLED=true, a supported cost policy, and successful automatic tariff
+verification. /admin displays configuration diagnostics without disclosing secrets.
 
-- Apply the updated `schema.sql`. Set database/provider secrets on Netlify Functions.
-- Inference stays disabled unless `INFERENCE_ENABLED=true`.
-- Before enabling, set `MAX_PROVIDER_REQUEST_TOKENS` to a VERIFIED upper bound of
-  the provider's accepted total input + cache + output tokens per request.
-  This is a safety reservation, not an estimated prompt size or output limit.
-  Do not lower it to squeeze a request into a user's remaining balance.
-- PostgreSQL locks the customer row and allows only one unsettled request per
-  customer. That prevents simultaneous requests spending the same allowance.
-- Reserve the full verified ceiling BEFORE calling the provider. If insufficient,
-  return HTTP 402 without a provider call. Requests can therefore stop EARLY,
-  even with a positive balance smaller than the required safety reservation.
-- Use DeepSeek Flash explicitly, thinking disabled, client tools only, 4096 max
-  requested output tokens. No arbitrary provider URL/model is accepted.
-- Obtain one final upstream response, count input + output + cached input exactly
-  once, and debit actual tokens in an idempotent transaction before sending the answer.
-- If actual usage exceeds the configured ceiling, record it and freeze the account.
-  That indicates a configuration/provider-contract breach; it must be investigated.
-- Unknown provider errors, missing usage, timeouts, or DB settlement failures keep
-  the reservation held and block new calls. NEVER auto-refund an ambiguous charge.
-  Reconcile against provider records through trusted database administration.
-  Do not blindly delete holds or rerun requests. No public hold-release endpoint exists.
+Client max_tokens is clamped to 4096. Images/documents, paid provider tools and
+thinking histories are rejected. Large conversations must be compacted. The
+connector encourages early compaction; server bounds remain authoritative.
 
-This fail-closed design trades availability for protecting your allowance.
-A request already accepted by the provider may still incur charges after revocation,
-client cancellation, or timeout. No distributed proxy can promise to undo those charges.
-Dollar budgets and tier-multiplied credits are separate from this raw-token ledger
-and have NOT been connected here. OpenRouter helpers are NOT metered by this route yet.
+The count_tokens endpoint is a cl100k compatibility estimate only. It does not
+authorize spend. Provider token usage fields are preserved in responses; internal
+allowance is exposed separately through X-Gateway-Credits-Used and
+X-Gateway-Credits-Remaining. Token input/output usage is not replaced by credits.
 
-## Client setup after deployment
+Streams are buffered, then emitted as message_start, content block start/delta/
+stop events and final message events. Text and client tool JSON deltas are
+supported. Provider timeout is 45 seconds; deployment timeouts can interrupt a
+call after the provider has accepted it. Such calls require reconciliation.
 
-Use `https://YOUR-SITE.netlify.app` as the Claude Desktop gateway base URL,
-and the customer's `sk-gw-…` key as its API key. Do NOT use `local-gateway`.
-The existing HTTP local server is independent and bypasses this database; it must
-not be included in a production bundle with your provider keys.
-
-For ApiDuck's hosted site use `https://apily.netlify.app` as the Anthropic base
-URL. Its authenticated `/v1/messages/count_tokens` companion uses offline
-`cl100k_base` tiktoken plus approximate message framing and does not debit tokens.
-It is a compatibility estimate, not DeepSeek's official billed-token count.
-Provider credentials must be configured as Netlify server-side function
-environment variables; no provider key belongs in a download or browser bundle.
-
-Non-streaming and buffered SSE responses expose:
-- `X-Gateway-Tokens-Used`
-- `X-Gateway-Tokens-Remaining`
-- `X-Gateway-Request-ID`
-
-The portal `/api/account` shows settled and reserved tokens. Reload/login to refresh.
-These headers are not a universal Claude UI widget. Normal provider `usage` fields
-are preserved for client compatibility; package balance is not substituted into them.
-No edits or patches to Claude Desktop binaries are made.
-
-## Operational restrictions and mandatory validation
-
-This prototype buffers generation before emitting SSE. It is not realtime token
-streaming and sends no keepalives during generation. Provider timeout is 45 seconds;
-verify your hosting plan's execution limits and use a long-running server if needed.
-The hosted endpoint currently caps requested output at 4096; clients requesting more
-receive 400. Hosted model listing/count_tokens endpoints remain future work.
-
-Current tests use mocked database interactions; they do NOT prove PostgreSQL locking,
-Netlify function behavior, real usage accounting, or Claude streaming compatibility.
-Before enabling for paying users, run real database tests for parallel calls,
-revocation, duplicate settlement, cold starts, provider failures, process termination,
-and reconciliation. Add deployment-level rate limits and authentication abuse
-protection. Review costs, privacy, supported content and billing terms.
-
-This is not "fully secure" certification or a ready-to-sell metering service.
+Before scaling paid sales, validate real database locking/concurrency, revocation,
+duplicate settlement, cold starts, provider errors, interrupted requests, CLI tool
+use and usage reconciliation on the deployed service. Offline tests and official
+encoder fixtures do not prove every property of the live distributed system.

@@ -30,7 +30,7 @@ export default async function account(req) {
       GROUP BY c.id, c.name`, [hash]);
     const row = result.rows[0];
     if (!row) return json({ error: "Invalid or revoked customer key" }, 401);
-    const readiness = inferenceStatus();
+    const readiness = await inferenceStatus();
     return json({
       customer: { id: row.id, name: row.name },
       tokens: { granted: row.granted, used: row.used, remaining: row.remaining, reserved: row.reserved, expires: null },

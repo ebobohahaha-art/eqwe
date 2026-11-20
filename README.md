@@ -1,133 +1,65 @@
-**Connector/cost-credit update:** Read [CREDIT-POLICY.md](CREDIT-POLICY.md) first. Balances now mean internal cost credits. Build with `npm run build`. Earlier raw-token descriptions below are historical and do not describe the new debit policy.
+# ApiDuck hosted gateway and customer connectors
 
-# Cloud portal: lifetime accounts, phase 1
+Public origin: https://apily.netlify.app
 
-**Update:** a guarded hosted DeepSeek `/v1/messages` route, authenticated
-`/v1/messages/count_tokens` route, and reservation ledger are included. Hosted
-inference is disabled by default and has not been integration-tested against a
-live database/provider. Read [METERING.md](METERING.md) before enabling.
+ApiDuck provides customer-key login, an administrator portal, PostgreSQL-backed
+lifetime credit balances, and a bounded Anthropic-compatible gateway to DeepSeek
+Flash. ApiDuck Fast is a service alias, not an Anthropic Claude model.
 
-Administrator page: `/admin.html`. Follow [ADMIN.md](ADMIN.md) to create a separate
-admin credential, configure Netlify, apply the audit schema, and manage customer keys.
+## Deploy on Netlify
 
-This is a Netlify website and account/API service.
-It provides customer-key login and a PostgreSQL-backed lifetime token allowance.
-Inference is disabled by default. Do not enable it until the deployment and
-metering validation described in [METERING.md](METERING.md) is complete.
-The first screen is customer API-key login. Only a successful `/api/account`
-response reveals the workspace; logout and refresh lock it again. This UI gate
-does not replace server authorization: static HTML is public, private data is
-protected by the account API. Service preset previews display Haiku 1x,
-Sonnet 2x, Opus 4x, and Fable 8x; these are service labels, not actual Claude
-models or active billing deductions.
-The UI says this explicitly; it does not simulate usage or claim a paid service is live.
+Upload this project's complete contents at the GitHub repository root. Leave the
+base directory blank. Do not upload .env, credentials or node_modules.
 
-## Netlify build and deploy settings
+- Build command: npm run build
+- Publish directory: public
+- Functions directory: netlify/functions
+- Node version: 22
 
-If Netlify production deploys are paused, see [RENDER.md](RENDER.md) for the
-alternative Render Web Service setup. It runs the same site and API functions
-without moving secrets into the browser.
+Configure server-only DATABASE_URL, ADMIN_ACCESS_KEY and DEEPSEEK_API_KEY. Apply
+schema.sql to the hosted PostgreSQL database. Set INFERENCE_ENABLED=true when
+enabling customer access. CREDIT_POLICY defaults to deepseek-flash-cost-v1; that
+explicit value is also accepted. Redeploy after changes to Functions variables.
 
-1. Create a hosted PostgreSQL database (for example through a provider you trust).
-   Use its verified TLS connection URL. Database and Netlify usage may have costs.
-2. Run `schema.sql` using the database's SQL console.
-3. Import `ffsumi31-byte/neonAPI` in Netlify. Leave **Base directory** blank;
-   this repository itself is the site root.
-4. Use these build settings (also recorded in `netlify.toml`):
-   - **Build command:** `npm test` — this static site has no compilation step;
-     the test suite is run as a deploy check.
-   - **Publish directory:** `public`
-   - **Functions directory:** `netlify/functions`
-   - **Runtime:** Node.js `22`
-5. In **Site configuration → Environment variables**, add these as server/runtime
-   secrets, available to Functions and Builds/Functions as appropriate:
-   - `DATABASE_URL` — hosted PostgreSQL TLS connection string.
-   - `ADMIN_ACCESS_KEY` — separate admin credential generated with `npm run admin-key`.
-   - `INFERENCE_ENABLED` — set to `false` initially.
-   - `DEEPSEEK_API_KEY` — private shared provider credential used by the server function.
-   - `MAX_PROVIDER_REQUEST_TOKENS` — only after deriving and validating the
-     provider's hard per-request upper bound.
-   Do not add provider/admin/database secrets as `VITE_*`, `NEXT_PUBLIC_*`,
-   or other client-exposed variables. `OPENROUTER_API_KEY` is not used by this route.
-6. Redeploy after setting variables. Netlify assigns an HTTPS `<your-site>.netlify.app` address.
-   An example address is not owned or published until you create that project.
-   Do not use drag-and-drop of `public` alone: it would omit the API functions.
-7. Open the assigned HTTPS URL. `apily.netlify.app` is already the intended API host.
+PROVIDER_PRICING_VERIFIED_AT and MAX_PROVIDER_REQUEST_TOKENS are no longer needed.
+The server checks the official provider tariff/model automatically and enforces
+request bounds itself. There is no manual ceiling or timestamp bypass. See
+[CREDIT-POLICY.md](CREDIT-POLICY.md) and [REQUEST-LIMITS.md](REQUEST-LIMITS.md).
 
-The GitHub repository does not provision PostgreSQL or populate Netlify
-environment variables. Do not set `INFERENCE_ENABLED=true` merely to make
-deployment appear complete; follow the live-database validation checklist in
-`METERING.md` first.
+Sign into /admin with your separate administrator key to inspect Gateway setup,
+create customer keys, grant credits or revoke access. Generate an admin key
+privately with npm run admin-key. See [ADMIN.md](ADMIN.md).
 
-## Issue a test customer, privately
+## Customer packages
 
-On your administrator computer, with Node.js 22+:
+Create a separate customer for each purchase and grant 10000000 internal credits
+for the $0.20 model-cost allowance. Verify the marketplace payment independently;
+no payment webhook is integrated. Deliver the sk-gw customer key privately.
+Balances persist across reinstalls and a copied key shares the same allowance.
 
-```powershell
-cd D:\local-ai-gateway\cloud-app
-npm install
-# Set DATABASE_URL privately in this terminal; do not paste it into chat.
-$env:DATABASE_URL = "<your database connection URL>"
-npm run issue-user -- "Test customer" 10000000
-```
+Builds generate /downloads/apiduck-windows.zip, /downloads/apiduck-linux.zip and
+/downloads/SHA256SUMS.txt. These archives contain no provider/admin/customer key.
+Windows offers official Claude Code installation and a key-entry window with
+Paste, Show key, Connect and Cancel. Linux/macOS uses a visible pasteable prompt.
+The gateway settings apply to that Claude Code session, not the global profile.
 
-The command prints a new `sk-gw-…` customer key ONCE. Send it securely to that
-customer and have them use the portal. The database stores only its SHA-256 hash.
-These 256-bit random service keys are NOT DeepSeek/OpenRouter keys.
-The name is a display name, not proof of an email identity.
-Bearer keys are passwords: anyone with a copied key can impersonate that customer.
-The current portal does not persist keys in browser storage.
+The customer portal identifies the underlying provider. Service preset cards are
+UI previews and do not change actual routing. All paid requests use the same
+bounded non-thinking Flash route; images/documents and provider server tools are
+not supported. Text and customer-executed tool turns are supported.
 
-```powershell
-npm run grant-tokens -- "<customer UUID>" 10000000
-npm run revoke-user -- "<customer UUID>"
-npm test
-```
+## Metering and verification
 
-Grant additional tokens only after independently verifying a purchase. No payments
-or purchase webhook is connected. There is no public create-user/grant endpoint.
-Grants accumulate and never reset monthly or expire. Zero consumption remains
-zero until real usage events are implemented; this is not a billing test.
+Before contacting the paid provider, the server reserves a conservative bound
+for that request's input and output cost. It debits measured cost credits once.
+Insufficient allowance prevents the call; ambiguous provider failures retain the
+reservation and require reconciliation. See [METERING.md](METERING.md).
 
-## ApiDuck Claude Code connector downloads
+Run npm ci and npm run build locally to package and test. Tests cover bounds,
+reference encoder/tokenizer fixtures, cost settlement, tariff failures, client
+setup, portal authentication, download integrity and source-file isolation.
+They use a mocked billing database. Verify a small deployed session and live
+database/provider accounting before scaling sales. Hosting/payment fees are
+separate from the model-cost allowance.
 
-The website's Windows/Linux connector launchers target `https://apily.netlify.app`.
-They prompt for each customer's `sk-gw-…` key and do not save it or contain any
-provider key. They require the customer to install Claude Code separately.
-
-After committing the connector files, create/publish a GitHub Release with a tag
-such as `v0.1.0`. `.github/workflows/connectors-release.yml` will attach
-`apiduck-windows.zip`, `apiduck-linux.tar.gz`, and `SHA256SUMS.txt`. The website
-links to this repository's Releases page. Until the first tagged release, there
-are no downloadable assets there.
-
-## Provider keys and hosted API
-
-Set the shared DeepSeek provider key as `DEEPSEEK_API_KEY` in Netlify's
-**server-side Functions environment only**. Do not put it in `public/`, client
-JavaScript, GitHub, or any download. Claude Code sends the customer's `sk-gw-…`
-key to the hosted API; the server validates the account and privately calls
-DeepSeek. The API host is `https://apily.netlify.app`.
-
-The live route will still reject requests until PostgreSQL/schema and the
-validated reservation ceiling are configured, and `INFERENCE_ENABLED=true` is
-deliberately enabled only after those checks. See `METERING.md`.
-
-## Important before public launch
-
-The hosted `/v1/messages` and `/v1/messages/count_tokens` endpoints exist but
-inference is **disabled by default**. Their
-automated tests use mocked database interactions; they do not establish live
-PostgreSQL concurrency, Netlify runtime compatibility, provider accounting, or
-Claude streaming compatibility. Follow every pre-launch check in `METERING.md`.
-Do not enable paid inference until those checks pass.
-
-The hosted route currently meters DeepSeek main-provider usage only. OpenRouter
-helpers, dollar budgets, purchases, email login/recovery, and native desktop installers
-are not implemented. The local gateway is separate and bypasses this account
-database. Never distribute a local build containing provider credentials.
-
-Keep database/admin/provider secrets server-side. Configure platform abuse limits,
-monitoring, key rotation/reissue and customer support before public use. The
-`/admin.html` page manages account grants; these grants are not guaranteed cost
-caps or a fixed-price token package.
+For a Render Web Service alternative, see [RENDER.md](RENDER.md).

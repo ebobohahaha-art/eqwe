@@ -16,6 +16,15 @@ function fakeDb(handler) {
   }, release() {} };
   return { db: { connect: async () => client }, queries };
 }
+
+test('Missing cost-credit migration stops before reservation and rolls back',async()=>{
+  const {db,queries}=fakeDb(sql=>{
+    if(sql.includes('SELECT credit_policy')) { const error=new Error('missing column');error.code='42703';throw error; }
+  });
+  await assert.rejects(reserveTokens(db,'hash',100),/schema.sql/);
+  assert.ok(queries.includes('ROLLBACK'));
+  assert.ok(!queries.some(q=>q.includes('INSERT')));
+});
 test("Zero allowance rolls back without making a reservation", async () => {
   const {db,queries} = fakeDb((sql) => {
     if(sql.includes("key_hash")) return {rows:[{id:"user",disabled:false}]};

@@ -41,9 +41,10 @@ export default async function admin(req) {
   if (!["GET", "POST"].includes(req.method)) return json({ error: "Method not allowed" }, 405);
   try {
     if (req.method === "GET" && new URL(req.url).searchParams.get('view') === 'readiness') {
-      return json({ inference: inferenceStatus(), databaseConfigured: Boolean(process.env.DATABASE_URL) });
+      return json({ inference: await inferenceStatus(), databaseConfigured: Boolean(process.env.DATABASE_URL) });
     }
     if (req.method === "GET") {
+      await database().query('SELECT credit_policy,provider_cost_upper_nanodollars FROM token_events LIMIT 0');
       const result = await database().query(`
         SELECT c.id, c.name, c.disabled, c.created_at,
           COALESCE(SUM(CASE WHEN e.kind='grant' THEN e.token_delta ELSE 0 END),0)::text AS granted,
@@ -54,7 +55,7 @@ export default async function admin(req) {
             WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS reserved
         FROM customers c LEFT JOIN token_events e ON e.customer_id=c.id
         GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100`);
-      return json({ customers: result.rows, limit: 100, inferenceMeteringEnabled: false, inference: inferenceStatus() });
+      return json({ customers: result.rows, limit: 100, inferenceMeteringEnabled: true, inference: await inferenceStatus() });
     }
     // Bounded body; never log its content, Authorization, or newly issued keys.
     const text = await req.text();

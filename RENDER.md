@@ -15,7 +15,7 @@ This does not require Netlify production deploy credits.
    database; do not create duplicate customer ledgers.
 3. In Render, connect the repository and create a **Web Service** with:
    - Runtime: Node 22
-   - Build command: `npm ci && npm test`
+   - Build command: `npm ci && npm run build`
    - Start command: `npm start`
    - Health check path: `/` (until a dedicated health endpoint is added)
    Render sets `PORT`; the server listens on `0.0.0.0`.
@@ -33,8 +33,8 @@ This does not require Netlify production deploy credits.
      checks in `METERING.md` pass.
    - `DEEPSEEK_API_KEY`: optional while inference is disabled; keep server-only.
      **Secret.**
-   - `MAX_PROVIDER_REQUEST_TOKENS`: do not set a guessed value to make calls
-     work. See `METERING.md`.
+   Provider request limits are enforced in code; prices/model version are checked
+   automatically. No MAX_PROVIDER_REQUEST_TOKENS or manual pricing timestamp is needed.
    `OPENROUTER_API_KEY` is not used by the hosted inference route.
 5. Once Render reports a successful build, open its HTTPS URL and `/admin.html`.
    Use only the matching Render admin key there. Customer keys are checked

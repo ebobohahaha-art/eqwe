@@ -1,7 +1,9 @@
 import { database } from "../../lib/db.mjs";
 import { keyHash } from "../../lib/keys.mjs";
 import { reserveTokens, settleTokens, measuredUsage } from "../../lib/quota.mjs";
-import { assertPricingVerified, priceUsage, reservationCredits } from "../../lib/credit-pricing.mjs";
+import { CREDIT_POLICY, priceUsage, requestReservation } from "../../lib/credit-pricing.mjs";
+import { prepareRequest, readRequestBody } from "../../lib/request-limits.mjs";
+import { verifiedProviderPrices } from "../../lib/provider-prices.mjs";
 
 function failure(message, status) {
   return Response.json({ type:"error", error: { type: "api_error", message } }, {
@@ -16,7 +18,13 @@ function asSse(message) {
   emit("message_start", { message: { ...message, content: [], stop_reason: null,
     usage: { ...message.usage, output_tokens: 0 } } });
   for (const [index, block] of message.content.entries()) {
-    emit("content_block_start", { index, content_block: block });
+    if (block.type === 'text') {
+      emit("content_block_start", { index, content_block: { type: 'text', text: '' } });
+      emit("content_block_delta", { index, delta: { type: 'text_delta', text: block.text } });
+    } else if (block.type === 'tool_use') {
+      emit("content_block_start", { index, content_block: { type: 'tool_use', id: block.id, name: block.name, input: {} } });
+      emit("content_block_delta", { index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input) } });
+    }
     emit("content_block_stop", { index });
   }
   emit("message_delta", { delta: { stop_reason: message.stop_reason, stop_sequence: message.stop_sequence ?? null },
@@ -24,7 +32,7 @@ function asSse(message) {
   emit("message_stop", {});
   return events.join("");
 }
-export function createMessagesHandler({ getDatabase = database, providerFetch = (...args) => fetch(...args) } = {}) {
+export function createMessagesHandler({ getDatabase = database, providerFetch = (...args) => fetch(...args), verifyPrices = verifiedProviderPrices } = {}) {
 return async function messages(req) {
   if (req.method !== "POST") return failure("POST required", 405);
   if (new URL(req.url).protocol !== "https:") return failure("HTTPS required", 400);
@@ -36,44 +44,32 @@ return async function messages(req) {
   } catch { return failure("A valid customer API key is required", 401); }
   if (process.env.INFERENCE_ENABLED !== "true") return failure("Hosted inference has not been enabled by the administrator", 503);
   if (!process.env.DEEPSEEK_API_KEY) return failure("Provider is not configured", 503);
-  const ceiling = Number(process.env.MAX_PROVIDER_REQUEST_TOKENS);
-  if (!Number.isSafeInteger(ceiling) || ceiling < 1) return failure("Verified provider token ceiling is not configured", 503);
-  let creditCeiling;
-  try {
-    assertPricingVerified();
-    creditCeiling = reservationCredits(ceiling);
-  } catch { return failure("Provider cost policy needs administrator verification", 503); }
+  if (process.env.CREDIT_POLICY && process.env.CREDIT_POLICY !== CREDIT_POLICY) return failure("Unsupported cost credit policy", 503);
   let reservation;
   try {
-    const raw = await req.text();
-    if (Buffer.byteLength(raw) > 512000) return failure("Request body too large", 413);
+    const raw = await readRequestBody(req);
     let body;
     try { body = JSON.parse(raw); } catch { return failure("Invalid JSON", 400); }
-    if (!body || !Array.isArray(body.messages) || !body.messages.length) return failure("Messages required", 400);
-    if (!Number.isInteger(body.max_tokens) || body.max_tokens < 1 || body.max_tokens > 4096) {
-      return failure("max_tokens must be between 1 and 4096 for this hosted test", 400);
-    }
-    if (body.tools?.some((tool) => tool.type || !tool.input_schema)) {
-      return failure("Only client-defined tools are supported; no paid server tools", 400);
-    }
-    const upstream = {
-      // Explicit model avoids provider mapping of Opus aliases to a pricier model.
-      model: "deepseek-flash", stream: false, thinking: { type: "disabled" },
-      max_tokens: body.max_tokens, messages: body.messages,
-      ...(body.system ? { system: body.system } : {}),
-      ...(body.tools ? { tools: body.tools } : {}),
-      ...(body.tool_choice ? { tool_choice: body.tool_choice } : {}),
-    };
+    const prepared = prepareRequest(body);
+    const creditCeiling = requestReservation(prepared.inputTokens, prepared.outputTokens);
+    const prices = await verifyPrices();
+    if (!prices.ready) return failure("ApiDuck could not verify current provider pricing. Please try again later.", 503);
     reservation = await reserveTokens(getDatabase(), hash, creditCeiling);
     const result = await providerFetch("https://api.deepseek.com/anthropic/v1/messages", {
       method: "POST", headers: { "content-type": "application/json", "x-api-key": process.env.DEEPSEEK_API_KEY },
-      body: JSON.stringify(upstream), signal: AbortSignal.timeout(45000),
+      body: prepared.serialized, signal: AbortSignal.timeout(45000), redirect: 'error',
     });
     if (!result.ok) throw new Error("Provider rejected request");
     const message = await result.json();
     if (message.type !== "message" || !Array.isArray(message.content)) throw new Error("Invalid provider response");
+    if (message.content.some(block => block.type === 'text' ? typeof block.text !== 'string' :
+      block.type !== 'tool_use' || typeof block.id !== 'string' || typeof block.name !== 'string' || !block.input || typeof block.input !== 'object' || Array.isArray(block.input))) {
+      throw new Error('Unsupported provider content');
+    }
     const actual = measuredUsage(message.usage);
     const priced = priceUsage(message.usage);
+    const input = message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0);
+    priced.boundExceeded = input > prepared.inputTokens || message.usage.output_tokens > prepared.outputTokens;
     const settlement = await settleTokens(getDatabase(), reservation, priced.credits, priced);
     if (settlement.overrun) return failure("Provider exceeded the verified ceiling. Account frozen for reconciliation.", 503);
     // Preserve the public API alias requested by branded gateway clients.

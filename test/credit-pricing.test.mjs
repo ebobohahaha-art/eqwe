@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { priceUsage, reservationCredits, assertPricingVerified, CREDIT_POLICY } from '../lib/credit-pricing.mjs';
+import { priceUsage, requestReservation, CREDIT_POLICY } from '../lib/credit-pricing.mjs';
+import { prepareRequest } from '../lib/request-limits.mjs';
 import { createMessagesHandler } from '../netlify/functions/messages.mjs';
 
 test('Cost credits price input, cache and output separately, always rounding upward', () => {
@@ -9,7 +10,7 @@ test('Cost credits price input, cache and output separately, always rounding upw
   assert.equal(priceUsage({input_tokens:0,output_tokens:0,cache_read_input_tokens:1}).credits,1);
   assert.equal(priceUsage({input_tokens:10,output_tokens:5,cache_read_input_tokens:20,cache_creation_input_tokens:3}).credits,602);
   assert.throws(() => priceUsage({input_tokens:1,output_tokens:0,server_tool_use:{web_search_requests:1}}));
-  assert.throws(() => reservationCredits(Number.MAX_SAFE_INTEGER));
+  assert.throws(() => requestReservation(Number.MAX_SAFE_INTEGER,4096));
 });
 test('Every accepted 10M-credit mix stays below $0.20 at published peak prices', () => {
   for (const [input, cache, output] of [[0,0,138888],[555555,0,0],[0,25000000,0],[100000,5000000,50000]]) {
@@ -21,15 +22,7 @@ test('Every accepted 10M-credit mix stays below $0.20 at published peak prices',
       assert.ok(publishedPeakNanos<=BigInt(priced.credits)*20n);
     }
   }
-  assert.equal(reservationCredits(1000000),72000000);
-});
-test('Stale, future and unacknowledged price policies fail closed', () => {
-  const now=Date.parse('2026-11-19T12:00:00Z');
-  assertPricingVerified({CREDIT_POLICY,PROVIDER_PRICING_VERIFIED_AT:'2026-11-19T11:00:00Z'},now);
-  for (const at of ['', 'invalid', '2026-11-18T00:00:00Z', '2026-11-20T00:00:00Z']) {
-    assert.throws(()=>assertPricingVerified({CREDIT_POLICY,PROVIDER_PRICING_VERIFIED_AT:at},now));
-  }
-  assert.throws(()=>assertPricingVerified({},now));
+  assert.equal(requestReservation(500000,4096),9294912);
 });
 
 test('Hosted inference reserves cost credits, audits settlement, and blocks depleted/revoked/pending keys', async (t) => {
@@ -47,18 +40,21 @@ test('Hosted inference reserves cost credits, audits settlement, and blocks depl
       if(sql.includes('SELECT status')) return {rows:[{status:'held',reserved_tokens:'72000'}]};
       return {rows:[],rowCount:0};
     }};
-    const handler=createMessagesHandler({getDatabase:()=>({connect:async()=>client}),providerFetch:async(url,options)=>{
+    const handler=createMessagesHandler({getDatabase:()=>({connect:async()=>client}),verifyPrices:async()=>({ready:true}),providerFetch:async(url,options)=>{
       calls++;
       assert.equal(url,'https://api.deepseek.com/anthropic/v1/messages');
       const body=JSON.parse(options.body); assert.equal(body.model,'deepseek-flash'); assert.equal(body.thinking.type,'disabled');
       if(scenario==='ambiguous') throw new Error('timeout');
       return Response.json({type:'message',model:'deepseek-flash',content:[{type:'text',text:'ok'}],stop_reason:'end_turn',usage:{input_tokens:10,output_tokens:5}});
     }});
-    const response=await handler(new Request('https://gateway.test/v1/messages',{method:'POST',headers:{Authorization:`Bearer sk-gw-${'a'.repeat(64)}`},body:JSON.stringify({model:scenario==='branded'?'apiduck-fast':'claude-opus',max_tokens:100,messages:[{role:'user',content:'hello'}]})}));
+    const body={model:scenario==='branded'?'apiduck-fast':'claude-opus',max_tokens:100,messages:[{role:'user',content:'hello'}]};
+    const limits=prepareRequest(body);
+    const expectedReservation=requestReservation(limits.inputTokens,limits.outputTokens);
+    const response=await handler(new Request('https://gateway.test/v1/messages',{method:'POST',headers:{Authorization:`Bearer sk-gw-${'a'.repeat(64)}`},body:JSON.stringify(body)}));
     assert.equal(response.status,{normal:200,branded:200,depleted:402,revoked:401,pending:409,ambiguous:503}[scenario]);
     assert.equal(calls,['normal','branded','ambiguous'].includes(scenario)?1:0);
     const hold=queries.find(([sql])=>sql.includes('INSERT INTO token_reservations'));
-    if(hold) assert.equal(hold[1][2],72000);
+    if(hold) assert.equal(hold[1][2],expectedReservation);
     const debit=queries.find(([sql])=>sql.includes('INSERT INTO token_events'));
     if(['normal','branded'].includes(scenario)) {
       assert.equal(debit[1][2],-540);
