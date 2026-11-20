@@ -34,12 +34,22 @@ test("Zero allowance rolls back without making a reservation", async () => {
   assert.ok(queries.includes("ROLLBACK"));
   assert.ok(!queries.some((q)=>q.includes("INSERT")));
 });
-test("Concurrent/pending request is refused before any new reservation", async () => {
-  const {db} = fakeDb((sql) => {
+test("Overlapping requests use only unreserved balance and retain unresolved holds", async () => {
+  const holds=[{id:'pending',reserved_tokens:'700'}];let inserts=0;
+  const {db} = fakeDb((sql,args) => {
     if(sql.includes("key_hash")) return {rows:[{id:"user",disabled:false}]};
-    if(sql.includes("SELECT id FROM token_reservations")) return {rowCount:1,rows:[{id:"pending"}]};
+    if(sql.includes('SELECT id,reserved_tokens FROM token_reservations'))return {rowCount:holds.length,rows:holds};
+    if(sql.includes('AS balance'))return {rows:[{balance:'1000'}]};
+    if(sql.includes('INSERT INTO token_reservations')){inserts++;holds.push({id:args[0],reserved_tokens:String(args[2])});}
   });
-  await assert.rejects(reserveTokens(db,"hash",100), /running/);
+  const first=await reserveTokens(db,'hash',200);
+  assert.equal(first.remaining,'100');
+  await assert.rejects(reserveTokens(db,'hash',101),/Insufficient/);
+  assert.equal(inserts,1);
+  const last=await reserveTokens(db,'hash',100);
+  assert.equal(last.remaining,'0');
+  await assert.rejects(reserveTokens(db,'hash',1),/Insufficient/);
+  assert.equal(holds[0].reserved_tokens,'700');
 });
 test("Settlement refuses duplicate debit", async () => {
   const {db,queries} = fakeDb((sql) => {

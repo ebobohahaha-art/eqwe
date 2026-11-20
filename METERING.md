@@ -10,7 +10,7 @@ guard. It checks the provider tariff/model and reserves input plus only the outp
 that fits the remaining credits. It forwards real SSE chunks immediately, checks
 pending usage/revocation every five seconds, and settles cumulative final usage
 once before emitting the final message events. Uncertain outcomes retain their hold and
-block further calls pending reconciliation. Never delete ambiguous holds blindly.
+retain their full reserved credits pending reconciliation. Never delete ambiguous holds blindly. Funded requests can overlap: admission holds the customer row lock and subtracts all held/review reservations before calculating a new affordable output budget.
 
 10M credits are a $0.20 model-cost allowance, not raw provider tokens. Input,
 cached input and output have different credit charges. Read [CREDIT-POLICY.md](CREDIT-POLICY.md)

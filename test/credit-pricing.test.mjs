@@ -26,7 +26,7 @@ test('Every accepted 10M-credit mix stays below $0.20 at published peak prices',
   assert.equal(requestReservation(500000,4096),9294912);
 });
 
-test('Hosted inference reserves cost credits, audits settlement, and blocks depleted/revoked/pending keys', async (t) => {
+test('Hosted inference reserves cost credits, audits settlement, and blocks depleted/revoked/fully reserved keys', async (t) => {
   const names=['INFERENCE_ENABLED','DEEPSEEK_API_KEY','MAX_PROVIDER_REQUEST_TOKENS','CREDIT_POLICY','PROVIDER_PRICING_VERIFIED_AT'];
   const before=Object.fromEntries(names.map(n=>[n,process.env[n]]));
   t.after(()=>{for(const n of names) { if(before[n]===undefined) delete process.env[n]; else process.env[n]=before[n]; }});
@@ -36,7 +36,7 @@ test('Hosted inference reserves cost credits, audits settlement, and blocks depl
     const client={release(){}, async query(sql,args){
       queries.push([sql,args]);
       if(sql.includes('key_hash')) return {rows:[{id:'customer',disabled:scenario==='revoked'}]};
-      if(sql.includes('SELECT id FROM token_reservations')) return {rowCount:scenario==='pending'?1:0,rows:[]};
+      if(sql.includes('SELECT id,reserved_tokens FROM token_reservations')) return {rowCount:scenario==='pending'?1:0,rows:scenario==='pending'?[{id:'pending',reserved_tokens:'10000000'}]:[]};
       if(sql.includes('AS balance')) return {rows:[{balance:scenario==='depleted'?'0':'10000000'}]};
       if(sql.includes('SELECT status')) return {rows:[{status:'held',reserved_tokens:'72000'}]};
       return {rows:[],rowCount:0};
@@ -52,7 +52,7 @@ test('Hosted inference reserves cost credits, audits settlement, and blocks depl
     const limits=prepareRequest(body);
     const expectedReservation=requestReservation(Math.min(limits.inputTokens,countInput(limits.upstream).inputTokens),limits.outputTokens);
     const response=await handler(new Request('https://gateway.test/v1/messages',{method:'POST',headers:{Authorization:`Bearer sk-gw-${'a'.repeat(64)}`},body:JSON.stringify(body)}));
-    assert.equal(response.status,{normal:200,branded:200,depleted:402,revoked:401,pending:409,ambiguous:503}[scenario]);
+    assert.equal(response.status,{normal:200,branded:200,depleted:402,revoked:401,pending:402,ambiguous:503}[scenario]);
     assert.equal(calls,['normal','branded','ambiguous'].includes(scenario)?1:0);
     const hold=queries.find(([sql])=>sql.includes('INSERT INTO token_reservations'));
     if(hold) assert.equal(hold[1][2],expectedReservation);
