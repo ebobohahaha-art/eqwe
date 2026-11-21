@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "scripts": {
     "build": "node scripts/package-connectors.mjs && npm test",
@@ -14,7 +14,8 @@
     "revoke-user": "node scripts/users.mjs revoke",
     "grant-tokens": "node scripts/users.mjs grant",
     "start": "node render-server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "build:vercel": "node scripts/build-vercel.mjs"
   },
   "dependencies": {
     "@huggingface/tokenizers": "0.2.0",

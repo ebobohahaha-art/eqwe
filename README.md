@@ -1,3 +1,5 @@
+Vercel deployment: see [VERCEL.md](VERCEL.md). Use `npm run build:vercel`; `vercel.json` supplies this automatically.
+
 # ApiDuck hosted gateway and customer connectors
 
 Public origin: https://apily.netlify.app
