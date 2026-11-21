@@ -9,3 +9,9 @@ test('Database diagnostics identify errors without exposing credentials or raw e
  assert.equal(serviceError(new Error('private stack and credentials'),'reservation').code,'DATABASE_OPERATION_FAILED');
  assert.equal(serviceError(new Error('private'),'tokenizer').code,'INPUT_TOKENIZER_FAILED');
 });
+
+test('Legacy reservation uniqueness error identifies the missing concurrency migration',()=>{
+ const result=serviceError({code:'23505',constraint:'one_unsettled_request_per_customer',detail:'private database detail'},'reservation');
+ assert.equal(result.code,'DATABASE_CONCURRENCY_MIGRATION_REQUIRED');
+ assert.doesNotMatch(JSON.stringify(result),/private database detail/);
+});

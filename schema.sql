@@ -36,7 +36,10 @@ CREATE TABLE IF NOT EXISTS token_reservations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   settled_at TIMESTAMPTZ
 );
-CREATE UNIQUE INDEX IF NOT EXISTS one_unsettled_request_per_customer
+-- V6 concurrency migration: admission locks the customer row and subtracts all
+-- pending holds. The legacy unique index incorrectly blocks funded overlaps.
+DROP INDEX IF EXISTS one_unsettled_request_per_customer;
+CREATE INDEX IF NOT EXISTS pending_reservations_by_customer
   ON token_reservations(customer_id) WHERE status IN ('held','review');
 -- No expiration or monthly reset. Grants persist until consumed.
 -- Cost-credit migration: token_delta/reserved_tokens/actual_tokens now store
