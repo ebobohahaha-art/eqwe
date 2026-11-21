@@ -114,3 +114,16 @@ test('Client cancellation aborts live generation without inventing a final charg
   await waitFor(()=>upstream.aborted);
   assert.equal(state.debits.length,0);assert.equal(state.status,'held');
 });
+
+
+test('First provider text is relayed before any periodic database checkpoint',async t=>{
+ environment(t);const {state,db}=ledger(),upstream=provider();
+ const handler=createMessagesHandler({getDatabase:()=>db,verifyPrices:async()=>({ready:true}),providerFetch:upstream.fetch,checkpointIntervalMs:60000});
+ const response=await handler(new Request('https://gateway.test/v1/messages',{method:'POST',headers,body:JSON.stringify(body())}));
+ const reader=response.body.getReader();let received='';
+ while(!received.includes('live reply')){const part=await reader.read();received+=new TextDecoder().decode(part.value);}
+ assert.equal(state.checkpoints.length,0);
+ assert.match(response.headers.get('Server-Timing'),/input;dur=/);
+ upstream.finish();while(!(await reader.read()).done){}
+ assert.equal(state.debits.length,1);assert.equal(state.status,'settled');
+});

@@ -48,6 +48,10 @@ return async function messages(req) {
   if (process.env.INFERENCE_ENABLED !== "true") return failure("Hosted inference has not been enabled by the administrator", 503);
   if (!process.env.DEEPSEEK_API_KEY) return failure("Provider is not configured", 503);
   if (process.env.CREDIT_POLICY && process.env.CREDIT_POLICY !== CREDIT_POLICY) return failure("Unsupported cost credit policy", 503);
+  const started=performance.now();
+  const timings=[];
+  let marked=started;
+  const mark=name=>{const current=performance.now();timings.push(`${name};dur=${(current-marked).toFixed(1)}`);marked=current;};
   let reservation;
   let phase="prepare";
   try {
@@ -57,14 +61,17 @@ return async function messages(req) {
     const prepared = prepareRequest(body);
     phase="tokenizer";
     const counted=countInput(prepared.upstream);
+    mark("input");
     if (counted.inputTokens > REQUEST_LIMITS.inputTokens) return failure('Conversation exceeds the 500000-token gateway input limit. Compact the conversation or shorten tool output.',400);
     prepared.inputTokens=Math.min(prepared.inputTokens,counted.inputTokens);
     const creditCeiling = requestReservation(prepared.inputTokens, prepared.outputTokens);
     phase="pricing";
     const prices = await verifyPrices();
+    mark("pricing");
     if (!prices.ready) return failure("ApiDuck could not verify current provider pricing. Please try again later.", 503);
     phase="reservation";
     reservation = await reserveTokens(getDatabase(), hash, creditCeiling,{inputCredits:inputReservation(prepared.inputTokens),creditsPerOutputToken:OUTPUT_CREDITS_PER_TOKEN,maxOutputTokens:prepared.outputTokens});
+    mark("reservation");
     prepared.outputTokens=reservation.outputTokens;
     prepared.upstream.max_tokens=prepared.outputTokens;
     prepared.upstream.stream=true;
@@ -75,6 +82,7 @@ return async function messages(req) {
       method: "POST", headers: { "content-type": "application/json", "x-api-key": process.env.DEEPSEEK_API_KEY },
       body: prepared.serialized, signal, redirect: 'error',
     });
+    mark("provider_headers");
     if (!result.ok) throw new Error("Provider rejected request");
     async function finish(message){
     if (message.type !== "message" || !Array.isArray(message.content)) throw new Error("Invalid provider response");
@@ -91,6 +99,7 @@ return async function messages(req) {
     // Preserve the public API alias requested by branded gateway clients.
     if (body.model === 'apiduck-fast') message.model = 'apiduck-fast';
     const headers = {
+      "Server-Timing": timings.join(", "),
       "Cache-Control": "no-store", "X-Gateway-Provider-Tokens-Used": String(actual),
       "X-Gateway-Credits-Used": String(priced.credits),
       "X-Gateway-Credits-Remaining": settlement.remaining,
@@ -112,8 +121,10 @@ return async function messages(req) {
         };
         const timer=setInterval(()=>{flush().then(()=>onEvent?.('ping',{})).catch(()=>aborter.abort());},checkpointIntervalMs);
         try{
-          await flush();
-          const message=await consumeProviderStream(result,{alias,progress,onEvent:async(type,data)=>{if(type==='message_start')await flush();if(onEvent)await onEvent(type,data);}});
+          // Admission already checked revocation and reserved the full ceiling.
+          // Checkpoints run every five seconds; do not block first provider
+          // events behind two extra database transactions.
+          const message=await consumeProviderStream(result,{alias,progress,onEvent});
           // If a checkpoint failed just as the provider completed, still try to
           // settle its verified final usage. Never discard a known final bill.
           clearInterval(timer);if(pending)await pending.catch(()=>{});
@@ -130,7 +141,7 @@ return async function messages(req) {
             }).catch(error=>{aborter.abort();try{send('error',{error:{type:'api_error',message:error.settled?error.message:`Stream interrupted. Reservation ${reservation.id} is held for usage reconciliation.`}});controller.close();}catch{}});
           },cancel(){aborter.abort();}
         });
-        return new Response(readable,{headers:{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-store','X-Gateway-Request-ID':reservation.id}});
+        return new Response(readable,{headers:{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-store, no-transform','Server-Timing':timings.join(', '),'X-Gateway-Request-ID':reservation.id}});
       }
       const {message,headers}=await pump();return new Response(JSON.stringify(message),{headers});
     }
