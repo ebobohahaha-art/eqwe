@@ -7,8 +7,10 @@ import { verifiedProviderPrices } from "../../lib/provider-prices.mjs";
 import { countInput } from "../../lib/exact-input.mjs";
 import { consumeProviderStream, encodeEvent } from "../../lib/provider-stream.mjs";
 
-function failure(message, status) {
-  return Response.json({ type:"error", error: { type: "api_error", message } }, {
+import { serviceError } from "../../lib/service-error.mjs";
+
+function failure(message, status, code) {
+  return Response.json({ type:"error", error: { type: "api_error", message, ...(code?{code}:{}) } }, {
     status, headers: { "Cache-Control": "no-store" },
   });
 }
@@ -47,17 +49,21 @@ return async function messages(req) {
   if (!process.env.DEEPSEEK_API_KEY) return failure("Provider is not configured", 503);
   if (process.env.CREDIT_POLICY && process.env.CREDIT_POLICY !== CREDIT_POLICY) return failure("Unsupported cost credit policy", 503);
   let reservation;
+  let phase="prepare";
   try {
     const raw = await readRequestBody(req);
     let body;
     try { body = JSON.parse(raw); } catch { return failure("Invalid JSON", 400); }
     const prepared = prepareRequest(body);
+    phase="tokenizer";
     const counted=countInput(prepared.upstream);
     if (counted.inputTokens > REQUEST_LIMITS.inputTokens) return failure('Conversation exceeds the 500000-token gateway input limit. Compact the conversation or shorten tool output.',400);
     prepared.inputTokens=Math.min(prepared.inputTokens,counted.inputTokens);
     const creditCeiling = requestReservation(prepared.inputTokens, prepared.outputTokens);
+    phase="pricing";
     const prices = await verifyPrices();
     if (!prices.ready) return failure("ApiDuck could not verify current provider pricing. Please try again later.", 503);
+    phase="reservation";
     reservation = await reserveTokens(getDatabase(), hash, creditCeiling,{inputCredits:inputReservation(prepared.inputTokens),creditsPerOutputToken:OUTPUT_CREDITS_PER_TOKEN,maxOutputTokens:prepared.outputTokens});
     prepared.outputTokens=reservation.outputTokens;
     prepared.upstream.max_tokens=prepared.outputTokens;
@@ -136,7 +142,10 @@ return async function messages(req) {
       // held reservation blocks further calls until an admin reconciles it.
       return failure(`Request could not be settled. Reservation ${reservation.id} held for support review.`, 503);
     }
-    return failure(error.status ? error.message : "Account service unavailable", error.status ?? 503);
+    if(error.status)return failure(error.message,error.status);
+    const diagnostic=serviceError(error,phase);
+    console.error("Gateway operation failed",{phase,code:diagnostic.code});
+    return failure(diagnostic.message,503,diagnostic.code);
   }
 };
 }
