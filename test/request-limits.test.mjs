@@ -131,3 +131,21 @@ test('An entire 10M-credit key stops before overspending and provider-bound viol
   assert.equal((await invoke()).status,401);
   assert.equal(calls,previousCalls);
 });
+
+test('Client tool discovery references preserve the tool result and available definitions',()=>{
+  const body=base();
+  body.tools=[{name:'memory_search',input_schema:{type:'object'}},{name:'blender_scene',defer_loading:true,input_schema:{type:'object'}}];
+  body.messages.push({role:'assistant',content:[{type:'tool_use',id:'search_1',name:'memory_search',input:{}}]},
+    {role:'user',content:[{type:'tool_result',tool_use_id:'search_1',content:[{type:'text',text:'Found tools'},{type:'tool_reference',tool_name:'blender_scene'}]}]});
+  const result=prepareRequest(body).upstream;
+  assert.equal(result.messages.at(-1).content[0].tool_use_id,'search_1');
+  assert.match(result.messages.at(-1).content[0].content[1].text,/blender_scene/);
+  assert.equal(result.tools[1].name,'blender_scene');
+  body.messages.at(-1).content[0].content[1].tool_name='missing_tool';
+  assert.throws(()=>prepareRequest(body),/definition is missing/);
+});
+test('Unsupported tool-result blocks report only their type and position',()=>{
+  const body=base();
+  body.messages=[{role:'user',content:[{type:'tool_result',tool_use_id:'call_1',content:[{type:'image',source:{data:'secret-data'}}]}]}];
+  assert.throws(()=>prepareRequest(body),e=>e.status===400 && e.message.includes('image (tool result)') && !e.message.includes('secret-data'));
+});
