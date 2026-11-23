@@ -36,7 +36,7 @@ Deployment update:
 1. Upload the complete updated source contents to the GitHub repository root,
    including all lib files and tests/fixtures. Build: npm run build. Publish: public.
 2. Keep DATABASE_URL, DEEPSEEK_API_KEY and ADMIN_ACCESS_KEY in Functions only.
-   PUBLIC_ORIGIN=https://apily.netlify.app is configured in netlify.toml.
+   PUBLIC_ORIGIN=https://oopengate.vercel.app is configured in netlify.toml.
 3. INFERENCE_ENABLED=true enables customer inference. CREDIT_POLICY may be absent
    or deepseek-flash-cost-v1. Remove obsolete timestamp/ceiling variables or leave
    them unused; arbitrary values cannot bypass enforced request limits.

@@ -2,7 +2,7 @@ Vercel deployment: see [VERCEL.md](VERCEL.md). Use `npm run build:vercel`; `verc
 
 # ApiDuck hosted gateway and customer connectors
 
-Public origin: https://apily.netlify.app
+Public origin: https://oopengate.vercel.app
 
 ApiDuck provides customer-key login, an administrator portal, PostgreSQL-backed
 lifetime credit balances, and a bounded Anthropic-compatible gateway to DeepSeek

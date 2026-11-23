@@ -1,111 +1,72 @@
-const $ = (id) => document.getElementById(id);
-let credential = "", busy = false, timer;
-function clearNewKey() {
-  $("new-key").value = "";
-  $("new-key-box").hidden = true;
+const $ = id => document.getElementById(id);
+let credential='',epoch=0,busy=false,expiry=0,expiryTimer,searchTimer,listVersion=0;
+let page=1,total=0,customers=[],selected=null,pendingWrite=null,detailVersion=0;
+const size=25;
+const number=value=>BigInt(value??'0').toLocaleString();
+const date=value=>value?new Date(value).toLocaleString():'—';
+function status(message,error=false){$('admin-status').textContent=message;$('admin-status').dataset.error=String(error);}
+function clearNewKey(){$('new-key').value='';$('new-key').type='password';$('show-new-key').textContent='Show';$('new-key-box').hidden=true;$('new-key-customer').textContent='';}
+function pendingFields(){for(const id of ['customer-name','grant-tokens','grant-reason'])$(id).readOnly=pendingWrite?.action==='create';for(const id of ['action-amount','action-reason'])$(id).readOnly=Boolean(pendingWrite&&pendingWrite.action!=='create');$('create-submit').textContent=pendingWrite?.action==='create'?'Retry same operation':'Create customer & key';$('action-submit').textContent=pendingWrite&&pendingWrite.action!=='create'?'Retry same operation':selected?.action==='revoke'?'Revoke customer':'Confirm grant';}
+function lock(){epoch++;detailVersion++;credential='';expiry=0;clearInterval(expiryTimer);clearTimeout(searchTimer);pendingWrite=null;selected=null;pendingFields();customers=[];total=0;listVersion++;clearNewKey();$('admin-key').value='';$('admin-key').type='password';$('show-admin-key').textContent='Show';$('customer-list').replaceChildren();$('detail-content').replaceChildren();$('admin-controls').hidden=true;$('session-tools').hidden=true;$('admin-login-panel').hidden=false;for(const id of ['action-dialog','detail-dialog'])if($(id).open)$(id).close();}
+async function api(params={},body=null){
+ if(!credential)throw new Error('Administration is locked.');
+ if(location.protocol!=='https:')throw new Error('Administrator sign-in requires HTTPS.');
+ const session=epoch;
+ const response=await fetch('/api/admin'+(Object.keys(params).length?'?'+new URLSearchParams(params):''),{method:body?'POST':'GET',headers:{Authorization:`Bearer ${credential}`,...(body?{'Content-Type':'application/json'}:{})},credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),...(body?{body:JSON.stringify(body)}:{})});
+ if(session!==epoch||!credential)throw new Error('Administration is locked.');
+ let data;try{data=await response.json();}catch{const e=new Error('The server returned an invalid response.');e.status=response.status;throw e;}
+ if(session!==epoch||!credential)throw new Error('Administration is locked.');
+ if(!response.ok){const e=new Error(data.error||`Admin request failed (${response.status}).`);e.status=response.status;if(response.status===401)lock();throw e;}
+ return data;
 }
-function lock() {
-  credential = "";
-  clearTimeout(timer);
-  $("admin-key").value = "";
-  clearNewKey();
-  $("customer-list").replaceChildren();
-  $("admin-controls").hidden = true;
-  $("admin-login-panel").hidden = false;
+function filters(){return{search:$('customer-search').value.trim(),status:$('customer-filter').value,sort:$('customer-sort').value};}
+function element(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+function button(label,click,disabled=false){const b=element('button',label);b.type='button';b.disabled=disabled;b.onclick=click;return b;}
+async function readiness(){const data=await api({view:'readiness'});$('database-status').textContent=data.databaseConfigured?'Database connection configured.':'DATABASE_URL is not configured.';paintReadiness(data.inference);}
+function paintReadiness(data){$('service-readiness').textContent=data?.ready?'Configuration ready. Live provider access is checked when requests run.':'Gateway configuration needs attention.';$('readiness-issues').replaceChildren();for(const issue of data?.issues||[])$('readiness-issues').append(element('p',`${issue.code}: ${issue.message}`));}
+async function refresh(){
+ const version=++listVersion;const data=await api({...filters(),page,limit:size});if(version!==listVersion)return;
+ if(!Array.isArray(data.customers)||!Number.isInteger(data.total)||!data.summary)throw new Error('Admin API is outdated. Deploy the full source package, including the admin function.');
+ customers=data.customers;total=data.total;
+ if(page>1&&!customers.length){page=Math.max(1,Math.ceil(total/size));return refresh();}
+ for(const field of ['total','active','revoked','remaining','used','reserved'])$('summary-'+field).textContent=number(data.summary[field]);
+ $('customer-list').replaceChildren();
+ for(const c of customers){
+  const row=element('tr');const name=element('td');name.append(button(c.name,()=>detail(c)),element('small',c.id),element('small','Created '+date(c.created_at)));row.append(name);
+  const access=element('td');access.append(element('span',c.disabled?'Revoked':BigInt(c.remaining)<=0n?'No credits':'Active','access-pill'+(c.disabled?' revoked':'')));row.append(access);
+  for(const field of ['remaining','granted','used','reserved'])row.append(element('td',number(c[field])));
+  const actions=element('td');actions.append(button('Details',()=>detail(c)),button('Grant credits',()=>openAction('grant',c),c.disabled),button('Revoke',()=>openAction('revoke',c),c.disabled));row.append(actions);$('customer-list').append(row);
+ }
+ $('customer-empty').hidden=customers.length>0;$('customer-count').textContent=total?`${(page-1)*size+1}–${Math.min(page*size,total)} of ${total} matching customers`:'0 matching customers';$('page-label').textContent=`Page ${page} of ${Math.max(1,Math.ceil(total/size))}`;$('previous-page').disabled=page<=1;$('next-page').disabled=page*size>=total;paintReadiness(data.inference);
 }
-function status(message) { $("admin-status").textContent = message; }
-async function api(body) {
-  if (location.protocol !== "https:") throw new Error("Use your published HTTPS site.");
-  const requestCredential = credential;
-  const response = await fetch("/api/admin", {
-    method: body ? "POST" : "GET", cache: "no-store",
-    headers: { Authorization: `Bearer ${credential}`, ...(body ? { "Content-Type": "application/json" } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-    signal: AbortSignal.timeout(20000),
-  });
-  const data = await response.json();
-  if (!credential || credential !== requestCredential) throw new Error("Admin session ended. Sign in again.");
-  if (!response.ok) {
-    if (response.status === 401) lock();
-    throw new Error(data.error || "Request failed");
-  }
-  return data;
+function safeRefresh(){if(credential)refresh().catch(error=>status(error.message,true));}
+function activityTable(title,rows,columns){const section=element('section');section.append(element('h3',title));if(!rows.length){section.append(element('p','No records.'));return section;}const wrap=element('div',undefined,'admin-table-wrap'),table=element('table'),head=element('tr');for(const[label]of columns)head.append(element('th',label));const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');for(const row of rows){const tr=element('tr');for(const[,value]of columns)tr.append(element('td',value(row)));body.append(tr);}table.append(body);wrap.append(table);section.append(wrap);return section;}
+async function detail(c){
+ const version=++detailVersion;
+ $('detail-title').textContent=c.name;$('detail-content').replaceChildren(element('p','Loading activity…'));$('detail-dialog').showModal();
+ try{const data=await api({view:'customer',id:c.id});if(version!==detailVersion||!$('detail-dialog').open)return;const root=$('detail-content');root.replaceChildren(element('p',`Account ${data.customer.id}`),element('p',`Available ${number(data.customer.remaining)} · Reserved ${number(data.customer.reserved)} · Pending estimate ${number(data.customer.pending)}`));const copy=button('Copy account ID',async()=>{try{await navigator.clipboard.writeText(c.id);status('Account ID copied.');}catch{status('Clipboard unavailable. Select the account ID manually.',true);}});copy.className='outline-btn';root.append(copy);
+ root.append(activityTable('Credit ledger · latest 50',data.events,[['Date',r=>date(r.created_at)],['Type',r=>r.kind],['Credit change',r=>number(r.token_delta)]]));
+ root.append(activityTable('Admin history · latest 50',data.audit,[['Date',r=>date(r.created_at)],['Action',r=>r.action],['Credits',r=>r.token_amount==null?'—':number(r.token_amount)],['Reference',r=>r.reason]]));
+ root.append(activityTable('Outstanding requests · latest 50',data.reservations,[['Request',r=>r.id],['Status',r=>r.status],['Reserved',r=>number(r.reserved_tokens)],['Pending estimate',r=>number(r.estimated_credits)],['Last update',r=>date(r.heartbeat_at||r.created_at)]]));
+ }catch(error){if(version===detailVersion)$('detail-content').replaceChildren(element('p',error.message));}
 }
-async function refresh() {
-  const data = await api();
-  $("service-readiness").textContent = data.inference ? (data.inference.ready ? 'Gateway configuration ready. Live operation still needs validation.' :
-    'Gateway setup required: ' + data.inference.issues.map((issue) => `${issue.code}: ${issue.message}`).join(' ')) : 'Redeploy the latest gateway to see configuration diagnostics.';
-  $("customer-list").replaceChildren();
-  for (const customer of data.customers) {
-    const card = document.createElement("article");
-    card.className = "panel";
-    const heading = document.createElement("h3");
-    heading.textContent = `${customer.name}${customer.disabled ? " · Revoked" : ""}`;
-    const detail = document.createElement("p");
-    detail.textContent = `ID: ${customer.id} · Granted: ${customer.granted} · Used: ${customer.used} · Reserved: ${customer.reserved ?? "0"} · Live pending estimate: ${customer.pending ?? "0"} · Available: ${customer.remaining}`;
-    card.append(heading, detail);
-    for (const action of ["grant", "revoke"]) {
-      const button = document.createElement("button");
-      button.className = "secondary";
-      button.textContent = action === "grant" ? "Grant credits" : "Revoke access";
-      button.disabled = customer.disabled;
-      button.onclick = () => mutate(async () => {
-        const reason = prompt("Reason / purchase reference (required; no secrets):");
-        if (!reason) return;
-        let tokens;
-        if (action === "grant") {
-          tokens = prompt("How many additional lifetime credits?");
-          if (!tokens) return;
-        }
-        if (!confirm(`${action === "grant" ? `Grant ${tokens} credits to` : "Revoke"} ${customer.name}?`)) return;
-        await api({ action, customerId: customer.id, tokens, reason, operationId: crypto.randomUUID() });
-        status("Saved. Balances refreshed.");
-        await refresh();
-      });
-      card.append(button);
-    }
-    $("customer-list").append(card);
-  }
+function openAction(action,c){if(pendingWrite){status('Resolve the pending operation before starting another action.',true);return;}selected={action,customer:c};$('action-title').textContent=action==='grant'?'Grant customer credits':'Revoke customer access';$('action-customer').textContent=`${c.name} · Available ${number(c.remaining)}`;$('action-amount-row').hidden=action!=='grant';$('action-amount').required=action==='grant';$('action-reason').value='';$('action-error').textContent='';$('action-submit').textContent=action==='grant'?'Confirm grant':'Revoke customer';$('action-dialog').showModal();}
+async function write(body){
+ if(busy)return null;
+ if(pendingWrite&&JSON.stringify({...body,operationId:undefined})!==JSON.stringify({...pendingWrite,operationId:undefined}))throw new Error('Retry the pending operation before changing its fields.');
+ pendingWrite??={...body,operationId:crypto.randomUUID()};pendingFields();busy=true;$('create-submit').disabled=true;$('action-submit').disabled=true;$('action-cancel').disabled=true;
+ try{const result=await api({},pendingWrite);pendingWrite=null;return result;}catch(error){if(error.status&&error.status<500){pendingWrite=null;if(error.status===409){safeRefresh();const resolved=new Error('This operation already reached the server. Balances are being refreshed.'+(body.action==='create'?' The one-time key cannot be recovered.':''));resolved.resolved=true;throw resolved;}}else{error.message+=` Retry without changing the form. Operation: ${pendingWrite?.operationId||'session ended'}`;}throw error;}finally{busy=false;pendingFields();$('create-submit').disabled=false;$('action-submit').disabled=false;$('action-cancel').disabled=false;}
 }
-async function mutate(action) {
-  if (busy) return;
-  busy = true;
-  try { await action(); } catch (error) { status(error.message); } finally { busy = false; }
-}
-$("admin-login").onsubmit = (event) => {
-  event.preventDefault();
-  mutate(async () => {
-    credential = $("admin-key").value.trim();
-    $("admin-key").value = "";
-    if (!/^sk-admin-[a-f0-9]{64}$/.test(credential)) { lock(); throw new Error("Enter a complete admin key."); }
-    try { await refresh(); } catch (error) { lock(); throw error; }
-    $("admin-controls").hidden = false;
-    $("admin-login-panel").hidden = true;
-    clearTimeout(timer);
-    timer = setTimeout(() => { lock(); status("Administration locked after 15 minutes. Sign in again."); }, 15 * 60 * 1000);
-    status("Connected. Keep this admin session private.");
-  });
-};
-$("create-user").onsubmit = (event) => {
-  event.preventDefault();
-  mutate(async () => {
-    if ($("new-key").value && !confirm("Replace the currently displayed key? Copy it first; it cannot be recovered.")) return;
-    if (!confirm("Create this customer and grant the specified credits? Only do this for a verified purchase or authorized test.")) return;
-    const result = await api({
-      action: "create", name: $("customer-name").value, tokens: $("grant-tokens").value,
-      reason: $("grant-reason").value, operationId: crypto.randomUUID(),
-    });
-    $("new-key").value = result.key;
-    $("new-key-box").hidden = false;
-    status("Customer created. The key is shown once below.");
-    await refresh();
-  });
-};
-$("admin-refresh").onclick = () => mutate(refresh);
-$("admin-logout").onclick = () => { lock(); status("Administration locked."); };
-$("dismiss-key").onclick = clearNewKey;
-$("copy-key").onclick = async () => {
-  try { await navigator.clipboard.writeText($("new-key").value); status("Customer key copied. Deliver privately."); }
-  catch { status("Clipboard unavailable. Select the customer key and copy it manually."); }
-};
+$('admin-login').onsubmit=async event=>{event.preventDefault();if(busy)return;credential=$('admin-key').value.trim();$('admin-key').value='';if(!/^sk-admin-[a-f0-9]{64}$/.test(credential)){lock();status('Enter the complete administrator key.',true);return;}epoch++;$('admin-login-button').disabled=true;try{await readiness();$('admin-controls').hidden=false;$('session-tools').hidden=false;$('admin-login-panel').hidden=true;expiry=Date.now()+15*60*1000;clearInterval(expiryTimer);expiryTimer=setInterval(()=>{const left=Math.max(0,Math.ceil((expiry-Date.now())/1000));$('session-expiry').textContent=`Locks in ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;if(!left){lock();status('Administration locked after 15 minutes.');}},1000);status('Administration unlocked.');await refresh();}catch(error){if(!$('admin-controls').hidden)status(error.message,true);else{lock();status(error.message,true);}}finally{$('admin-login-button').disabled=false;}};
+$('create-user').onsubmit=async event=>{event.preventDefault();if($('new-key').value){status('Copy and clear the displayed key before creating another customer.',true);return;}try{const result=await write({action:'create',name:$('customer-name').value.trim(),tokens:$('grant-tokens').value,reason:$('grant-reason').value.trim()});if(!result)return;$('new-key').value=result.key;$('new-key-box').hidden=false;$('new-key-customer').textContent=`Customer ${result.customerId}. Copy this key before hiding it.`;status('Customer created. Copy the one-time key.');page=1;await refresh();}catch(error){if(error.resolved){$('customer-search').value=$('customer-name').value.trim();$('create-user').reset();page=1;safeRefresh();}status(error.message,true);}};
+$('action-form').onsubmit=async event=>{event.preventDefault();if(!selected)return;try{const result=await write({action:selected.action,customerId:selected.customer.id,...(selected.action==='grant'?{tokens:$('action-amount').value}:{}),reason:$('action-reason').value.trim()});if(!result)return;$('action-dialog').close();status('Saved. Customer balances refreshed.');await refresh();}catch(error){if(error.resolved){selected=null;$('action-dialog').close();status(error.message,true);}else $('action-error').textContent=error.message;}};
+$('action-cancel').onclick=()=>{if(pendingWrite){$('action-error').textContent='Retry the pending operation first, or lock administration and verify this customer before submitting another operation.';return;}$('action-dialog').close();};
+$('action-dialog').addEventListener('cancel',event=>{if(busy||pendingWrite)event.preventDefault();});
+$('detail-close').onclick=()=>{detailVersion++;$('detail-dialog').close();};$('detail-dialog').addEventListener('cancel',()=>{detailVersion++;});
+$('admin-refresh').onclick=safeRefresh;$('check-readiness').onclick=()=>readiness().catch(e=>status(e.message,true));$('admin-logout').onclick=()=>{lock();status('Administration locked.');};$('dismiss-key').onclick=clearNewKey;
+for(const [buttonId,inputId]of[['show-admin-key','admin-key'],['show-new-key','new-key']])$(buttonId).onclick=()=>{const show=$(inputId).type==='password';$(inputId).type=show?'text':'password';$(buttonId).textContent=show?'Hide':'Show';};
+$('copy-key').onclick=async()=>{try{await navigator.clipboard.writeText($('new-key').value);status('Customer key copied.');}catch{status('Clipboard unavailable. Select and copy the key manually.',true);}};
+$('customer-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{page=1;safeRefresh();},300);};for(const id of['customer-filter','customer-sort'])$(id).onchange=()=>{page=1;safeRefresh();};$('previous-page').onclick=()=>{if(page>1){page--;safeRefresh();}};$('next-page').onclick=()=>{if(page*size<total){page++;safeRefresh();}};
+function csv(value){let text=String(value??'');if(/^[=+\-@\t\r]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"';}
+$('admin-export').onclick=async()=>{if(busy)return;$('admin-export').disabled=true;try{const query=filters(),rows=new Map();let expected=null;for(let n=1;;n++){const data=await api({...query,page:n,limit:100});if(!Number.isInteger(data.total)||!Array.isArray(data.customers))throw new Error('Deploy the latest admin API before exporting.');if(expected===null)expected=data.total;if(expected>10000)throw new Error('Narrow the filters to at most 10,000 customers before exporting.');if(data.total!==expected)throw new Error('The customer list changed during export. Please retry.');for(const c of data.customers)rows.set(c.id,c);if(n*100>=expected)break;}if(rows.size!==expected)throw new Error('The customer list changed during export. Please retry.');const fields=['id','name','disabled','created_at','granted','used','reserved','pending','remaining'];const text=[fields.map(csv).join(','),...[...rows.values()].map(c=>fields.map(f=>csv(c[f])).join(','))].join('\r\n');const url=URL.createObjectURL(new Blob(['\ufeff'+text],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=`customers-${new Date().toISOString().slice(0,10)}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),2000);status(`Exported ${rows.size} customers. Keys are not included.`);}catch(error){status(error.message,true);}finally{$('admin-export').disabled=false;}};
 lock();

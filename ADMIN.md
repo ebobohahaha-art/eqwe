@@ -1,47 +1,27 @@
-# Admin setup — server-side only
+# Administration
 
-1. Apply the updated `schema.sql` in PostgreSQL. It adds `admin_audit` without
-   dropping existing customer data.
-2. On your private admin computer, from `cloud-app`, run `npm run admin-key`.
-   It prints a new high-entropy admin key once. Store it in a password manager.
-3. Set that exact value as `ADMIN_ACCESS_KEY` in Netlify's **Functions/runtime**
-   environment settings, alongside `DATABASE_URL`. Redeploy.
-   Never put this value in HTML, frontend build variables, Git, screenshots, or chat.
-4. Visit `https://YOUR-SITE.netlify.app/admin.html` and paste that admin key.
+Open `/admin` on the same HTTPS site as the customer portal. The planned new URL is `https://oopengate.vercel.app/admin`; the domain move is performed separately.
 
-This is a single-admin-key prototype, not email/password or MFA admin accounts.
-Creating an admin key locally does not automatically configure Netlify.
-The admin page and API do not use DeepSeek/OpenRouter provider keys.
+## Setup
 
-## Operations
+Use the existing PostgreSQL schema and `DATABASE_URL`. Set `ADMIN_ACCESS_KEY` to a private administrator key in the deployment runtime. `npm run admin-key` generates a new admin key if needed; generating one does not update deployment settings automatically. A customer key cannot unlock administration.
 
-- List the latest 100 customers and their lifetime granted/used/remaining tokens.
-- Create a customer key with an initial grant. Raw keys are returned only once.
-- Grant additional positive tokens, with a reason/purchase reference.
-- Revoke a customer's key. There is deliberately no public reactivation/deletion
-  or manual usage editing endpoint. A revoke does not cancel in-flight provider jobs.
-- Each web mutation is audited transactionally. Duplicate operation IDs return 409,
-  rather than granting twice. On an ambiguous network timeout, refresh first and
-  inspect the audit table before resubmitting; do not blindly issue new operations.
-- SQL-admin CLI operations remain separate and currently are not recorded in
-  `admin_audit`. Keep database credentials restricted and audit those operations separately.
+No new schema migration or dependency is required for this upgrade. Deploy the full source, including `lib/admin-queries.mjs` and `netlify/functions/admin.mjs`.
 
-## Safety and limitations
+## Customer management
 
-HTTPS is required. Admin authorization is checked on EVERY server request.
-Writes also require a matching Origin and JSON content type. The UI keeps the
-admin key only in memory, clears it on logout/reload, and locks after 15 minutes.
-This is a UI timeout, not expiration of the underlying admin key. Rotate the
-Netlify `ADMIN_ACCESS_KEY` and redeploy immediately if it leaks.
-Do not share the admin key with customers. Add platform rate limits, monitoring,
-MFA-backed administrator identity, database least privilege/backups, server audit
-retention/access policy and integration tests before public production use.
-There is no public endpoint to create or grant access without admin authorization.
+- Search all customers by name or account ID, filter active/revoked/depleted accounts, and sort by creation date, name or available balance.
+- Move through paginated results. Summary totals describe all matching customers, not just the current page.
+- Create a customer with an initial credit grant and purchase reference. Copy the one-time key before clearing it; plaintext keys cannot be recovered or listed later.
+- Grant credits or revoke access using the in-page confirmation form. Each change uses the existing transactional audit and operation ID protection.
+- Open Details for the latest 50 credit events, administrator changes and outstanding request reservations for that account.
+- Export the current search/filter result to CSV, up to 10,000 customers. Exported customer names are protected against spreadsheet formulas, and keys are never included.
+- Recheck gateway configuration independently of loading the customer list. This can report missing database configuration even when customer queries cannot run.
 
-Customer-key revocation and account display work against this cloud database.
-The existing local gateway is NOT connected to it. Inference reservation,
-actual provider-cost settlement and request enforcement are implemented by the
-hosted route. Read CREDIT-POLICY.md and REQUEST-LIMITS.md for the current cost-credit
-policy and its deployment requirements. The manual price timestamp and provider
-request-ceiling settings are obsolete; Gateway setup checks configuration and
-automatic provider-tariff verification.
+## Retries and locking
+
+If a write times out, keep the form unchanged and use Retry same operation. The same operation ID is retained in memory, so a completed write cannot grant credits twice. A 409 means the operation already reached the server: the customer list is refreshed and the completed action form closes. If a create response was lost, its plaintext key cannot be recovered.
+
+The key stays in this tab's memory and is cleared by Lock admin, page refresh or the 15-minute session lock. HTTP pages cannot authenticate. Customer requests never gain administrator privileges. Revoking an account prevents future admission but does not cancel provider jobs already in progress.
+
+See DOMAIN-MOVE.md for the later move to oopengate.vercel.app.

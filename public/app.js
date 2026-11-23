@@ -15,8 +15,8 @@ if (localPreview) {
     $("overview-granted").textContent = "10,000,000";
     $("overview-used").textContent = "250,000";
     updateUsageShare("10000000", "250000", "9750000");
-    $("inference-status").textContent = "Unavailable";
-    $("connection-copy").textContent = "Hosted connection is not ready yet.";
+    updateConnection(false, "This local preview uses sample credits.");
+    $("workspace-status").textContent = "Local preview";
     $("connection-label").textContent = "Local preview · not connected";
     $("tracker-status").textContent = "Sample values only. No account ledger was queried.";
     $("balance-placeholder").hidden = true;
@@ -24,12 +24,19 @@ if (localPreview) {
     $("preview-notice").hidden = false;
     $("refresh-usage").disabled = true;
     setAuthenticated(true);
-    $("login-heading").focus();
+
   };
 }
 function setAuthenticated(connected) {
   $("auth-screen").hidden = connected;
   $("workspace-screen").hidden = !connected;
+  document.dispatchEvent?.(new Event("apiduck:session"));
+}
+function updateConnection(enabled, detail) {
+  $("inference-status").textContent = enabled ? "Enabled" : "Unavailable";
+  $("inference-status").classList.toggle("is-enabled", enabled);
+  $("connection-copy").textContent = enabled ? "" : detail;
+  $("connection-copy").hidden = enabled || !detail;
 }
 function updateUsageShare(grantedValue, usedValue, remainingValue) {
   const granted = BigInt(grantedValue);
@@ -40,7 +47,9 @@ function updateUsageShare(grantedValue, usedValue, remainingValue) {
   const available = granted > 0n ? (remaining * 100n) / granted : 0n;
   $("usage-meter").value = percentage;
   $("usage-percent").textContent = `${percentage}%`;
-  $("overview-meter").value = Number(available < 0n ? 0n : available > 100n ? 100n : available);
+  const share = Number(available < 0n ? 0n : available > 100n ? 100n : available);
+  $("overview-meter").value = share;
+  $("overview-share").textContent = `${share}% remaining`;
 }
 setAuthenticated(false);
 $("show").onclick = () => {
@@ -72,8 +81,8 @@ $("logout").onclick = () => {
   $("overview-remaining").textContent = "—";
   $("overview-granted").textContent = "—";
   $("overview-used").textContent = "—";
-  $("inference-status").textContent = "Checking status";
-  $("connection-copy").textContent = "Hosted connection is not ready yet.";
+  updateConnection(false, "");
+  $("overview-share").textContent = "Remaining allowance";
   $("status").textContent = "Disconnected.";
   $("key").focus();
   for (const card of document.querySelectorAll("[data-tier]")) {
@@ -124,12 +133,9 @@ $("login").onsubmit = async (event) => {
     $("balance-placeholder").hidden = true;
     $("preview-notice").hidden = true;
     $("connection-label").textContent = "Account connected";
-    updateUsageShare(data.tokens.granted, data.tokens.used, data.tokens.remaining);
     $("status").textContent = data.inferenceEnabled ? "Connected. Hosted main-provider route is enabled." : (data.serviceStatus?.message || "Connected. Hosted inference is disabled.");
-    $("inference-status").textContent = data.inferenceEnabled ? "Enabled" : "Unavailable";
-    $("connection-copy").textContent = data.inferenceEnabled ?
-      "Hosted messages are enabled. Download the connector from Connect to start." :
-      (data.serviceStatus?.message || "Hosted connection is not ready yet.");
+    $("workspace-status").textContent = "Account connected";
+    updateConnection(data.inferenceEnabled === true, data.serviceStatus?.message || "Hosted inference is currently unavailable.");
     $("overview-remaining").textContent = BigInt(data.tokens.remaining).toLocaleString();
     $("overview-granted").textContent = BigInt(data.tokens.granted).toLocaleString();
     $("overview-used").textContent = BigInt(data.tokens.used).toLocaleString();
@@ -141,7 +147,7 @@ $("login").onsubmit = async (event) => {
     $("show").setAttribute("aria-label", "Show customer key");
     setAuthenticated(true);
     sessionKey = key;
-    $("login-heading").focus();
+
   } catch (error) {
     $("status").textContent = error.name === "TimeoutError" ? "Connection timed out." : error.message;
   } finally { pending = false; $("connect-button").disabled = false; }
@@ -172,6 +178,8 @@ $("refresh-usage").onclick = async () => {
     $("overview-granted").textContent = BigInt(data.tokens.granted).toLocaleString();
     $("overview-used").textContent = BigInt(data.tokens.used).toLocaleString();
     $("pending-usage").textContent=BigInt(data.tokens.pending??"0").toLocaleString();
+    updateUsageShare(data.tokens.granted, data.tokens.used, data.tokens.remaining);
+    updateConnection(data.inferenceEnabled === true, data.serviceStatus?.message || "Hosted inference is currently unavailable.");
     $("tracker-status").textContent = "Updated from the server. Live pending is an estimate; settled usage is the final charge.";
   } catch {
     if (key === sessionKey) $("tracker-status").textContent = "Refresh failed. The previous balance may be out of date.";

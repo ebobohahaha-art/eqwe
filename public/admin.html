@@ -1,79 +1,28 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex,nofollow">
-  <meta name="theme-color" content="#0b0e0d">
-  <title>Administration · Apiduh</title>
-  <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/workspace.css">
-  <link rel="stylesheet" href="/admin.css">
-  <script src="/admin.js" defer></script>
-</head>
-<body class="admin-page">
-  <header class="admin-header">
-    <div class="admin-header-inner">
-      <a class="admin-wordmark" href="/" aria-label="Apiduh customer portal">Apiduh</a>
-      <span class="admin-location">Administration</span>
-      <a class="admin-back" href="/">Customer portal</a>
-    </div>
-  </header>
-  <main>
-    <div class="admin-heading">
-      <h1>Account administration</h1>
-      <p>Manage customer access and lifetime credit grants.</p>
-    </div>
-    <section class="panel" id="admin-login-panel" aria-labelledby="admin-signin-title">
-      <h2 id="admin-signin-title">Administrator sign-in</h2>
-      <p id="admin-key-help">Use your separate <code>sk-admin-…</code> administrator key.</p>
-      <form id="admin-login">
-        <label for="admin-key">Admin key</label>
-        <input id="admin-key" type="password" placeholder="sk-admin-…" autocomplete="off"
-               spellcheck="false" autocapitalize="none" aria-describedby="admin-key-help" required>
-        <button class="primary" type="submit">Unlock administration <span aria-hidden="true">→</span></button>
-      </form>
-    </section>
-    <p id="admin-status" role="status" aria-live="polite" aria-atomic="true"></p>
-    <div id="admin-controls" hidden>
-      <section class="panel" aria-labelledby="service-readiness-title">
-        <h2 id="service-readiness-title">Gateway setup</h2>
-        <p id="service-readiness" role="status">Checking server configuration...</p>
-      </section>
-      <div class="admin-toolbar">
-        <button class="secondary" id="admin-refresh" type="button">Refresh accounts</button>
-        <button class="secondary" id="admin-logout" type="button">Lock administration</button>
-      </div>
-      <div class="admin-grid">
-        <section class="panel" aria-labelledby="admin-create-title">
-          <h2 id="admin-create-title">Create a customer key</h2>
-          <form id="create-user">
-            <label for="customer-name">Customer name</label>
-            <input id="customer-name" maxlength="100" required>
-            <label for="grant-tokens">Initial lifetime credits</label>
-            <input id="grant-tokens" type="number" min="1" max="1000000000" step="1" value="10000000" required>
-            <label for="grant-reason">Reason or purchase reference</label>
-            <input id="grant-reason" minlength="3" maxlength="300" aria-describedby="grant-help" required>
-            <small id="grant-help">Leave keys and other secrets out of this reference.</small>
-            <button class="primary" type="submit">Create key and grant credits</button>
-          </form>
-          <div id="new-key-box" hidden>
-            <label for="new-key">New customer key</label>
-            <p id="new-key-help">Copy this key now and deliver it privately. It is shown only once.</p>
-            <input id="new-key" readonly aria-describedby="new-key-help">
-            <div class="admin-actions">
-              <button class="secondary" id="copy-key" type="button">Copy key</button>
-              <button class="secondary" id="dismiss-key" type="button">Hide and clear</button>
-            </div>
-          </div>
-        </section>
-        <section class="panel admin-customers" aria-labelledby="admin-customers-title">
-          <h2 id="admin-customers-title">Customers</h2>
-          <p>Balances for the latest 100 accounts, from the credit ledger.</p>
-          <div id="customer-list"></div>
-        </section>
-      </div>
-    </div>
-  </main>
-</body>
-</html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>Administration · Gateway</title><link rel="stylesheet" href="/portal.css"><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script>
+</head><body class="admin-page">
+<header class="admin-bar"><a href="/">Gateway</a><span>Administration</span><a class="admin-portal" href="/">Customer portal</a></header>
+<main class="admin-main">
+ <div class="admin-heading"><div><p class="admin-eyebrow">WORKSPACE CONTROL</p><h1>Customers &amp; credits</h1></div><div id="session-tools" hidden><span id="session-expiry"></span><button id="admin-logout" class="outline-btn" type="button">Lock admin</button></div></div>
+ <section id="admin-login-panel" class="admin-card admin-signin"><h2>Administrator sign-in</h2><form id="admin-login"><label for="admin-key">Admin key</label><div class="admin-secret"><input id="admin-key" type="password" autocomplete="off" spellcheck="false" required placeholder="sk-admin-…"><button id="show-admin-key" type="button">Show</button></div><button id="admin-login-button" class="primary-button" type="submit">Unlock administration</button></form><p>Your admin key stays in this tab. The session locks after 15 minutes.</p></section>
+ <p id="admin-status" class="admin-message" role="status" aria-live="polite"></p>
+ <div id="admin-controls" hidden>
+  <div class="admin-top-grid">
+   <section class="admin-card"><div class="admin-section-heading"><h2>Gateway status</h2><button id="check-readiness" class="text-button" type="button">Recheck</button></div><p id="service-readiness"></p><p id="database-status"></p><div id="readiness-issues"></div></section>
+   <section class="admin-card"><h2>Create customer</h2><form id="create-user"><div class="form-grid"><div><label for="customer-name">Customer name</label><input id="customer-name" maxlength="100" required></div><div><label for="grant-tokens">Initial credits</label><input id="grant-tokens" type="number" min="1" max="1000000000" step="1" value="10000000" required></div></div><label for="grant-reason">Purchase / reference</label><input id="grant-reason" minlength="3" maxlength="300" required><button class="primary-button" id="create-submit" type="submit">Create customer &amp; key</button></form>
+    <div id="new-key-box" class="new-key" hidden><label for="new-key">New customer key — shown once</label><div class="admin-secret"><input id="new-key" type="password" readonly autocomplete="off"><button id="show-new-key" type="button">Show</button></div><p id="new-key-customer"></p><div class="admin-actions"><button id="copy-key" class="outline-btn" type="button">Copy key</button><button id="dismiss-key" class="text-button" type="button">Hide &amp; clear</button></div></div>
+   </section>
+  </div>
+  <section class="admin-customers"><div class="admin-section-heading"><h2>Customers</h2><div class="admin-actions"><button id="admin-export" class="outline-btn" type="button">Export CSV</button><button id="admin-refresh" class="outline-btn" type="button">Refresh</button></div></div>
+   <div class="admin-filters"><div><label for="customer-search">Search name or account ID</label><input id="customer-search" type="search" maxlength="100" placeholder="Search all customers"></div><div><label for="customer-filter">Access</label><select id="customer-filter"><option value="all">All customers</option><option value="active">Active</option><option value="depleted">No available credits</option><option value="revoked">Revoked</option></select></div><div><label for="customer-sort">Sort</label><select id="customer-sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name</option><option value="balance_high">Highest balance</option><option value="balance_low">Lowest balance</option></select></div></div>
+   <dl class="admin-summary"><div><dt>Matching customers</dt><dd id="summary-total">—</dd></div><div><dt>Active</dt><dd id="summary-active">—</dd></div><div><dt>Revoked</dt><dd id="summary-revoked">—</dd></div><div><dt>Available credits</dt><dd id="summary-remaining">—</dd></div><div><dt>Settled usage</dt><dd id="summary-used">—</dd></div><div><dt>Reserved</dt><dd id="summary-reserved">—</dd></div></dl>
+   <p id="customer-count" class="admin-note" role="status"></p><div class="admin-table-wrap"><table><thead><tr><th>Customer</th><th>Access</th><th>Available</th><th>Granted</th><th>Settled</th><th>Reserved</th><th>Actions</th></tr></thead><tbody id="customer-list"></tbody></table></div><p id="customer-empty" hidden>No customers match these filters.</p>
+   <div class="admin-pagination"><button id="previous-page" class="outline-btn" type="button">Previous</button><span id="page-label"></span><button id="next-page" class="outline-btn" type="button">Next</button></div>
+  </section>
+ </div>
+</main>
+<dialog id="action-dialog" aria-labelledby="action-title"><form id="action-form"><h2 id="action-title"></h2><p id="action-customer"></p><div id="action-amount-row"><label for="action-amount">Additional credits</label><input id="action-amount" type="number" min="1" max="1000000000" step="1" value="10000000"></div><label for="action-reason">Reason / purchase reference</label><input id="action-reason" minlength="3" maxlength="300" required><p id="action-error" role="status"></p><div class="admin-actions"><button id="action-submit" class="primary-button" type="submit">Confirm</button><button id="action-cancel" class="outline-btn" type="button">Cancel</button></div></form></dialog>
+<dialog id="detail-dialog" aria-labelledby="detail-title"><div class="admin-section-heading"><h2 id="detail-title">Customer details</h2><button id="detail-close" class="outline-btn" type="button">Close</button></div><div id="detail-content"></div></dialog>
+</body></html>

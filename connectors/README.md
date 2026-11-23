@@ -5,7 +5,7 @@ The same download works for every customer. Reinstalling never resets a balance.
 Windows setup offers to install the official Claude Code CLI through WinGet.
 Installation guide: https://code.claude.com/docs/en/setup
 
-Gateway: https://apily.netlify.app
+Gateway: https://oopengate.vercel.app
 
 Windows: extract the ZIP and double-click Start-ApiDuck.cmd. A connection window
 opens with a key field, Paste button, Show key checkbox, and Connect button.

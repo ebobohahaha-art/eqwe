@@ -26,7 +26,7 @@ test('Download ZIPs contain only allowlisted files, correct origin and valid che
     const settings=JSON.parse(files.get('claude-settings.json'));
     assert.equal(settings.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS,'100000');
     assert.equal(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,'100000');
-    assert.equal(files.get('gateway-url.txt').trim(),new URL(process.env.PUBLIC_ORIGIN||'https://apily.netlify.app').origin);
+    assert.equal(files.get('gateway-url.txt').trim(),new URL(process.env.PUBLIC_ORIGIN||'https://oopengate.vercel.app').origin);
     for(const content of files.values()) assert.doesNotMatch(content,/sk-admin-[a-f0-9]{64}|sk-gw-[a-f0-9]{64}|DEEPSEEK_API_KEY=/);
     for(const content of files.values()) assert.doesNotMatch(content,/deepseek/i);
     assert.match(sums,new RegExp(`[a-f0-9]{64}  apiduck-${platform}\\.zip`));

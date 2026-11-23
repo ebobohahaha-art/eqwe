@@ -17,8 +17,6 @@
     { teeth: 21, axis: 0.56, zoom: 1.52 },
     { teeth: 28, axis: -0.43, zoom: 1.36 },
   ];
-  const drawingWidth = 550;
-  const drawingHeight = 270;
 
   function toothOutline(teeth, radius) {
     const path = new Path2D();
@@ -56,6 +54,15 @@
       outline: toothOutline(teeth, radius),
     });
   }
+
+  const bounds = {
+    left: Math.min(...gears.map(gear => gear.x - gear.radius - 6)),
+    right: Math.max(...gears.map(gear => gear.x + gear.radius + 6)),
+    top: Math.min(...gears.map(gear => gear.y - gear.radius - 6)),
+    bottom: Math.max(...gears.map(gear => gear.y + gear.radius + 6)),
+  };
+  const drawingWidth = bounds.right - bounds.left;
+  const drawingHeight = bounds.bottom - bounds.top;
 
   let inspected = null;
   let pointed = null;
@@ -120,22 +127,28 @@
   }
 
   function baseView() {
-    const scale = Math.min(width / drawingWidth, height / drawingHeight);
-    return { scale, x: (width - drawingWidth * scale) / 2, y: (height - drawingHeight * scale) / 2 };
+    const scale = Math.min(width * .84 / drawingWidth, height * .80 / drawingHeight);
+    return {
+      scale,
+      x: (width - drawingWidth * scale) / 2 - bounds.left * scale,
+      y: (height - drawingHeight * scale) / 2 - bounds.top * scale,
+    };
   }
 
   function inspectionView(view) {
     if (!inspected || reducedMotion.matches) return { zoom: 1, x: 0, y: 0 };
-    const edge = inspected.radius + 5.1;
-    const inset = 8;
-    const zoom = Math.min(inspected.zoom, (Math.min(width, height) - inset * 2) / (edge * 2 * view.scale));
-    const padding = edge * zoom * view.scale + inset;
-    const x = Math.min(width - padding, Math.max(padding, view.x + inspected.x * view.scale));
-    const y = Math.min(height - padding, Math.max(padding, view.y + inspected.y * view.scale));
+    const zoom = Math.min(1 + (inspected.zoom - 1) * .15, 1.15);
+    const inset = Math.min(13, width * .025, height * .035);
+    const shift = (coordinate, low, high, origin, size) => {
+      const centerShift = coordinate * (1 - zoom);
+      const minimum = (inset - origin) / view.scale - low * zoom;
+      const maximum = (size - inset - origin) / view.scale - high * zoom;
+      return Math.min(maximum, Math.max(minimum, centerShift));
+    };
     return {
       zoom,
-      x: (x - view.x) / view.scale - inspected.x * zoom,
-      y: (y - view.y) / view.scale - inspected.y * zoom,
+      x: shift(inspected.x, bounds.left, bounds.right, view.x, width),
+      y: shift(inspected.y, bounds.top, bounds.bottom, view.y, height),
     };
   }
 

@@ -3,6 +3,7 @@ import { database } from "../../lib/db.mjs";
 import { authorizeAdmin } from "../../lib/admin-auth.mjs";
 import { mintKey, keyHash, positiveTokens } from "../../lib/keys.mjs";
 import { inferenceStatus } from "../../lib/inference-status.mjs";
+import { balances, customerColumns, customerFilter, listOptions } from "../../lib/admin-queries.mjs";
 
 const json = (body, status = 200) => Response.json(body, {
   status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
@@ -24,41 +25,56 @@ function databaseFailure(error) {
   // Return only a safe category to the browser; never expose SQL, hostnames,
   // credentials, or raw PostgreSQL error messages.
   if (error?.message === "database_not_configured") {
-    return "DATABASE_URL is missing from this site's Netlify function environment variables.";
+    return "DATABASE_URL is missing from this site's server environment variables.";
   }
   if (["42P01", "42703"].includes(error?.code)) {
     return "Database schema is missing or outdated. Run the current schema.sql against the database configured in DATABASE_URL, then redeploy.";
   }
   if (["28P01", "3D000", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT"].includes(error?.code)) {
-    return "Netlify cannot connect to the configured database. Check DATABASE_URL, database credentials, and network access.";
+    return "The gateway cannot connect to the configured database. Check DATABASE_URL, database credentials, and network access.";
   }
   return "Admin database request failed. Check DATABASE_URL and apply the current schema.sql.";
 }
 
-export default async function admin(req) {
+export function createAdminHandler({ db = database, readiness = inferenceStatus } = {}) {
+return async function admin(req) {
   const auth = authorizeAdmin(req);
   if (auth !== 200) return json({ error: authFailure(auth) }, auth);
   if (!["GET", "POST"].includes(req.method)) return json({ error: "Method not allowed" }, 405);
   try {
     if (req.method === "GET" && new URL(req.url).searchParams.get('view') === 'readiness') {
-      return json({ inference: await inferenceStatus(), databaseConfigured: Boolean(process.env.DATABASE_URL) });
+      return json({ inference: await readiness(), databaseConfigured: Boolean(process.env.DATABASE_URL) });
     }
     if (req.method === "GET") {
-      await database().query('SELECT credit_policy,provider_cost_upper_nanodollars FROM token_events LIMIT 0');
-      await database().query('SELECT estimated_credits,heartbeat_at FROM token_reservations LIMIT 0');
-      const result = await database().query(`
-        SELECT c.id, c.name, c.disabled, c.created_at,
-          COALESCE(SUM(CASE WHEN e.kind='grant' THEN e.token_delta ELSE 0 END),0)::text AS granted,
-          COALESCE(-SUM(CASE WHEN e.kind='usage' THEN e.token_delta ELSE 0 END),0)::text AS used,
-          (COALESCE(SUM(e.token_delta),0) - COALESCE((SELECT SUM(r.reserved_tokens)
-            FROM token_reservations r WHERE r.customer_id=c.id AND r.status IN ('held','review')),0))::text AS remaining,
-          COALESCE((SELECT SUM(r.reserved_tokens) FROM token_reservations r
-            WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS reserved,
-          COALESCE((SELECT SUM(r.estimated_credits) FROM token_reservations r
-            WHERE r.customer_id=c.id AND r.status IN ('held','review')),0)::text AS pending
-        FROM customers c LEFT JOIN token_events e ON e.customer_id=c.id
-        GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100`);
-      return json({ customers: result.rows, limit: 100, inferenceMeteringEnabled: true, inference: await inferenceStatus() });
+      const url = new URL(req.url);
+      const view = url.searchParams.get('view');
+      let options;
+      if (view === 'customer') {
+        if (!uuid.test(url.searchParams.get('id') || '')) return json({ error: 'Invalid customer ID' }, 400);
+      } else {
+        if (view && view !== 'customers') return json({ error: 'Invalid admin view' }, 400);
+        try { options = listOptions(url); } catch { return json({ error: 'Invalid customer search or pagination' }, 400); }
+      }
+      const store = db();
+      await store.query('SELECT credit_policy,provider_cost_upper_nanodollars FROM token_events LIMIT 0');
+      await store.query('SELECT estimated_credits,heartbeat_at FROM token_reservations LIMIT 0');
+      if (view === 'customer') {
+        const id = url.searchParams.get('id');
+        const customer = await store.query(balances + `SELECT ${customerColumns} FROM balances WHERE id=$1`, [id]);
+        if (!customer.rows[0]) return json({ error: 'Customer not found' }, 404);
+        const events = await store.query('SELECT id,kind,token_delta::text,created_at FROM token_events WHERE customer_id=$1 ORDER BY created_at DESC,id DESC LIMIT 50', [id]);
+        const audit = await store.query('SELECT id,action,reason,token_amount::text,created_at FROM admin_audit WHERE customer_id=$1 ORDER BY created_at DESC,id DESC LIMIT 50', [id]);
+        const reservations = await store.query("SELECT id,status,reserved_tokens::text,estimated_credits::text,created_at,heartbeat_at FROM token_reservations WHERE customer_id=$1 AND status IN ('held','review') ORDER BY created_at DESC,id DESC LIMIT 50", [id]);
+        return json({ customer: customer.rows[0], events: events.rows, audit: audit.rows, reservations: reservations.rows, historyLimit: 50 });
+      }
+      const { search,state,page,limit,offset,order } = options;
+      const summary = await store.query(balances + `SELECT COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE NOT disabled)::int AS active,COUNT(*) FILTER (WHERE disabled)::int AS revoked,
+        COALESCE(SUM(granted),0)::text AS granted,COALESCE(SUM(used),0)::text AS used,
+        COALESCE(SUM(remaining),0)::text AS remaining,COALESCE(SUM(reserved),0)::text AS reserved
+        FROM balances ${customerFilter}`, [search,state]);
+      const result = await store.query(balances + `SELECT ${customerColumns} FROM balances ${customerFilter} ORDER BY ${order} LIMIT $3 OFFSET $4`, [search,state,limit,offset]);
+      return json({ customers: result.rows, page, limit, total: summary.rows[0].total, summary: summary.rows[0], inferenceMeteringEnabled: true, inference: await readiness() });
     }
     // Bounded body; never log its content, Authorization, or newly issued keys.
     const text = await req.text();
@@ -79,7 +95,7 @@ export default async function admin(req) {
     // Client-generated operation ID prevents a network retry from granting twice.
     if (!uuid.test(body.operationId ?? "")) return json({ error: "A unique operationId is required" }, 400);
 
-    const client = await database().connect();
+    const client = await db().connect();
     try {
       await client.query("BEGIN");
       const claimed = await client.query(`
@@ -122,4 +138,6 @@ export default async function admin(req) {
     return json({ error: databaseFailure(error) }, 503);
   }
 }
+}
+export default createAdminHandler();
 export const config = { path: "/api/admin" };

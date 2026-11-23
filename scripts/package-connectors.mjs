@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const url = new URL(process.env.PUBLIC_ORIGIN || 'https://apily.netlify.app');
+const url = new URL(process.env.PUBLIC_ORIGIN || 'https://oopengate.vercel.app');
 if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
   throw new Error('PUBLIC_ORIGIN must be an HTTPS origin without path or credentials');
 }

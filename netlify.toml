@@ -5,7 +5,7 @@
 
 [build.environment]
   NODE_VERSION = "22"
-  PUBLIC_ORIGIN = "https://apily.netlify.app"
+  PUBLIC_ORIGIN = "https://oopengate.vercel.app"
 
 [functions]
   node_bundler = "esbuild"
