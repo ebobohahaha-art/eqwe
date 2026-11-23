@@ -6,7 +6,8 @@ import { inferenceStatus } from "../../lib/inference-status.mjs";
 function json(body, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
-export default async function account(req) {
+export function createAccountHandler({getDatabase=database,getReadiness=inferenceStatus}={}) {
+return async function account(req) {
   if (req.method !== "GET") return json({ error: "Method not allowed" }, 405);
   if (new URL(req.url).protocol !== "https:") return json({ error: "HTTPS required" }, 400);
   let hash;
@@ -17,7 +18,7 @@ export default async function account(req) {
     return json({ error: "Use the customer key issued by this service, not a provider key." }, 401);
   }
   try {
-    const result = await database().query(`
+    const result = await getDatabase().query(`
       SELECT c.id, c.name,
         COALESCE(SUM(CASE WHEN e.kind = 'grant' THEN e.token_delta ELSE 0 END), 0)::text AS granted,
         COALESCE(-SUM(CASE WHEN e.kind = 'usage' THEN e.token_delta ELSE 0 END), 0)::text AS used,
@@ -32,18 +33,26 @@ export default async function account(req) {
       GROUP BY c.id, c.name`, [hash]);
     const row = result.rows[0];
     if (!row) return json({ error: "Invalid or revoked customer key" }, 401);
-    const readiness = await inferenceStatus();
+    if (new URL(req.url).searchParams.get('view') === 'usage') {
+      const events = await getDatabase().query(`SELECT request_id,created_at,(-token_delta)::text AS units
+        FROM token_events WHERE customer_id=$1 AND kind='usage' AND created_at >= $2::timestamptz
+        ORDER BY created_at DESC,id DESC LIMIT 50`, [row.id, '2026-11-23T16:55:47.437029+00:00']);
+      return json({policy:'usd-service-v1',since:'2026-11-23T16:55:47.437029+00:00',events:events.rows});
+    }
+    const readiness = await getReadiness();
     return json({
       customer: { id: row.id, name: row.name },
       tokens: { granted: row.granted, used: row.used, remaining: row.remaining, reserved: row.reserved, pending:row.pending, expires: null },
       inferenceEnabled: readiness.ready,
       serviceStatus: { code: readiness.code, message: readiness.customerMessage },
       creditPolicy: CREDIT_POLICY,
-      note: "Balances are internal ApiDuck credits, not provider tokens. 10M credits represent a $0.20 provider-cost allowance at the verified price bounds. Outstanding reservations are excluded.",
+      note: "USD service balance: 1,000,000 internal ledger units = $1 service balance. $10 service balance funds at most $0.20 provider cost. This is not cash or a provider account balance. Outstanding reservations are excluded.",
     });
   } catch {
     // Never include SQL errors, connection strings, or authorization headers.
     return json({ error: "Account service unavailable. Check server database setup." }, 503);
   }
 }
+};
+export default createAccountHandler();
 export const config = { path: "/api/account" };

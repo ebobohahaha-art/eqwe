@@ -1,9 +1,14 @@
+import { formatUSD } from '/service-balance.mjs';
 import { createAccountClient } from '/account-client.mjs';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const client = createAccountClient({ origin: location.origin });
+let rememberedStorage = null;
+try { rememberedStorage = localStorage; } catch {}
+const client = createAccountClient({ origin: location.origin, storage: rememberedStorage });
+const displayedCredits = formatUSD;
 const gatewayOrigin = location.protocol === 'https:' ? location.origin : 'https://oopengate.vercel.app';
+let chatTurns=[], chatBusy=false, chatVersion=0;
 let pendingRoute = 'customer', signingIn = false, refreshing = false;
 let previousFocus = null, toastTimer;
 
@@ -58,16 +63,16 @@ function route() {
   if (['models', 'presets'].includes(page)) page = 'overview';
   const tutorial = ['connect', 'downloads'].includes(page);
   if (tutorial) page = client.authenticated ? 'customer' : 'welcome';
-  if (['overview', 'customer', 'docs'].includes(page) && !client.authenticated) {
+  if (['overview', 'customer', 'usage', 'chat', 'docs'].includes(page) && !client.authenticated) {
     pendingRoute = page;
     location.hash = 'login';
     return;
   }
   if (page === 'login' && client.authenticated) page = 'customer';
-  if (!['overview', 'customer', 'docs', 'login'].includes(page)) page = 'welcome';
+  if (!['overview', 'customer', 'usage', 'chat', 'docs', 'login'].includes(page)) page = 'welcome';
   $('#welcome').hidden = page !== 'welcome';
   $('#login-screen').hidden = page !== 'login';
-  $('#app').hidden = !['overview', 'customer', 'docs'].includes(page);
+  $('#app').hidden = !['overview', 'customer', 'usage', 'chat', 'docs'].includes(page);
   for (const screen of $$('[data-screen]')) screen.hidden = screen.dataset.screen !== page;
   for (const link of $$('[data-page]')) {
     const active = link.dataset.page === page;
@@ -75,8 +80,9 @@ function route() {
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   }
   if (tutorial) openTutorial(); else closeTutorial();
+  if (page === 'usage') loadUsage();
   window.scrollTo({ top: 0, behavior: 'instant' });
-  document.title = page === 'welcome' ? 'Gateway: a gateway for Claude Desktop' : `${({ overview: 'Overview', customer: 'Customer account', docs: 'Docs', login: 'Log in' })[page]} · Gateway`;
+  document.title = page === 'welcome' ? 'Gateway: a gateway for Claude Desktop' : `${({ overview: 'Overview', customer: 'Customer account', usage: 'Usage', chat: 'Simple chat', docs: 'Docs', login: 'Log in' })[page]} · Gateway`;
 }
 window.addEventListener('hashchange', route);
 document.addEventListener('click', (event) => {
@@ -95,6 +101,8 @@ const digitPixels = {
   '7':['11111','00001','00010','00100','01000','01000','01000'],
   '8':['01110','10001','10001','01110','10001','10001','01110'],
   '9':['01110','10001','10001','01111','00001','00010','01100'],
+  '$':['00100','01111','10100','01110','00101','11110','00100'],
+  '.':['0','0','0','0','0','1','1'],
   ',':['00','00','00','00','11','01','10'],
   '-':['000','000','000','111','000','000','000'],
   '—':['000','000','000','111','000','000','000'],
@@ -115,10 +123,10 @@ function renderPixelBalance(value) {
 }
 function renderAccount(account = null) {
   $('#account-state').textContent = account ? account.inferenceEnabled ? 'Hosted messages enabled.' : 'Hosted messages unavailable.' : 'Signed out.';
-  $('#inference-state').textContent = account ? account.inferenceEnabled ? 'Point Claude Desktop at the gateway to start using your credits.' : account.serviceStatus.message : '';
-  renderPixelBalance(account ? BigInt(account.tokens.remaining).toLocaleString('en-US') : '—');
+  $('#inference-state').textContent = account ? account.inferenceEnabled ? 'Point Claude Desktop at the gateway to start using your service balance.' : account.serviceStatus.message : '';
+  renderPixelBalance(account ? displayedCredits(account.tokens.remaining) : '—');
   for (const field of ['granted', 'used']) {
-    $(`#balance-${field}`).textContent = account ? BigInt(account.tokens[field]).toLocaleString() : '—';
+    $(`#balance-${field}`).textContent = account ? displayedCredits(account.tokens[field]) : '—';
   }
   let share = 0;
   if (account) {
@@ -136,9 +144,9 @@ function renderAccount(account = null) {
   $('#customer-key').textContent = account ? `•••• ${client.keySuffix}` : '—';
   $('#customer-inference').textContent = account ? account.inferenceEnabled ? 'Inference enabled' : account.serviceStatus.message : '';
   for (const field of ['remaining', 'granted', 'used', 'reserved', 'pending']) {
-    $(`#customer-${field}`).textContent = account ? BigInt(account.tokens[field]).toLocaleString() : '—';
+    $(`#customer-${field}`).textContent = account ? displayedCredits(account.tokens[field]) : '—';
   }
-  $('#customer-status').textContent = account ? 'Updated from your account. Reserved credits are held for requests in progress; pending usage is an estimate.' : 'Sign in to load your account.';
+  $('#customer-status').textContent = account ? 'USD service balance, not withdrawable cash or provider credit. $10 funds at most $0.20 of provider costs. Temporary holds are released after verified settlement.' : 'Sign in to load your account.';
   $('#customer-refresh').disabled = !client.authenticated;
 }
 
@@ -174,7 +182,7 @@ $('#api-login-form').addEventListener('submit', async (event) => {
   }
 });
 function signOut(message = '') {
-  client.signOut(); pendingRoute = 'customer';
+  client.signOut(); chatTurns=[]; chatVersion++; $('#chat-history').replaceChildren(); $('#usage-list').replaceChildren(); pendingRoute = 'customer';
   clearKeyInput(); renderAccount(); closeTutorial();
   location.hash = 'login'; route(); setError(message);
   $('#api-key').focus();
@@ -212,3 +220,37 @@ $('#copy-url').addEventListener('click', async () => {
 });
 renderAccount();
 route();
+
+try {
+  const restored = await client.restore();
+  if (restored) { renderAccount(restored); if (!location.hash || ['#welcome', '#login'].includes(location.hash)) location.hash = pendingRoute; route(); }
+} catch (error) { setError(error.message); }
+
+async function loadUsage(){
+ if(!client.authenticated)return;
+ $('#usage-status').textContent='Loading…';
+ try{
+  const data=await client.usage();if(!data)return;
+  if(!Array.isArray(data.events))throw new Error('Invalid usage response.');
+  $('#usage-list').replaceChildren();
+  for(const event of data.events){
+   const tr=document.createElement('tr');
+   for(const value of [new Date(event.created_at).toLocaleString(),formatUSD(event.units),event.request_id]){const td=document.createElement('td');td.textContent=value;tr.append(td);}
+   $('#usage-list').append(tr);
+  }
+  $('#usage-status').textContent=data.events.length?'Latest 50 settled requests. Holds are shown separately on Account.':'No settled requests since the USD update.';
+ }catch(error){$('#usage-status').textContent=error.message;if(error.status===401)signOut(error.message);}
+}
+$('#usage-refresh').onclick=loadUsage;
+function chatLine(role,text){const p=document.createElement('p');p.className='chat-line '+role;p.textContent=(role==='user'?'You: ':'Assistant: ')+text;$('#chat-history').append(p);}
+$('#chat-new').onclick=()=>{if(chatBusy)return;chatTurns=[];chatVersion++;$('#chat-history').replaceChildren();$('#chat-status').textContent='New chat. No previous history will be sent.';};
+$('#chat-form').onsubmit=async event=>{
+ event.preventDefault();if(chatBusy)return;
+ const text=$('#chat-input').value.trim();if(!text||text.length>2000)return;
+ const version=chatVersion;
+ const messages=[...chatTurns.slice(-6),{role:'user',content:text}];
+ chatBusy=true;$('#chat-send').disabled=true;$('#chat-new').disabled=true;$('#chat-status').textContent='Sending…';
+ try{const answer=await client.chat(messages);if(version!==chatVersion)return;chatLine('user',text);chatLine('assistant',answer);chatTurns=[...messages,{role:'assistant',content:answer}].slice(-6);$('#chat-input').value='';$('#chat-status').textContent='Completed. Balance updated.';await refreshBalance();}
+ catch(error){if(version===chatVersion){$('#chat-status').textContent=error.message+' Requests are never retried automatically.';if(error.status===401)signOut(error.message);}}
+ finally{chatBusy=false;$('#chat-send').disabled=false;$('#chat-new').disabled=false;}
+};

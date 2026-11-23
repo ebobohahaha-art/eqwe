@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Gateway is a gateway for Claude Desktop. Connect with your customer key, then track your credit balance.">
+  <meta name="description" content="Gateway is a gateway for Claude Desktop. Connect with your customer key, then track your USD service balance.">
   <title>Gateway: a gateway for Claude Desktop</title>
 <link rel="stylesheet" href="/portal.css">
   <script type="module" src="/gateway-ui.js"></script>
@@ -43,7 +43,7 @@
         <p id="login-error" class="auth-error" role="alert" aria-live="polite" hidden></p>
         <button class="primary-button auth-submit" id="login-submit" type="submit">Verify &amp; log in</button>
       </form>
-      <p class="auth-privacy">Your key is sent only to this site's account service over HTTPS. It isn't saved in local storage, embedded in the HTML, or added to the URL. You'll need to sign in again after refreshing.</p>
+      <p class="auth-privacy">Your key is stored in this browser for seven days and sent only to this gateway over HTTPS. Signing out removes it.</p>
       <a class="auth-portal" href="#how-it-works">How to get a customer key</a>
     </section>
   </main>
@@ -54,6 +54,8 @@
     <nav class="topnav" aria-label="Workspace navigation">
       <a data-page="overview" href="#overview">Overview</a>
       <a data-page="customer" href="#customer">Account</a>
+      <a data-page="usage" href="#usage">Usage</a>
+      <a data-page="chat" href="#chat">Simple chat</a>
       <a data-page="docs" href="#docs">Documentation</a>
     </nav>
     <div class="account-actions"><a class="portal-link" href="#customer">Customer account</a><button class="logout-link" id="logout-btn" type="button">Sign out</button></div>
@@ -63,9 +65,9 @@
       <h1 class="sr-only">Overview</h1>
       <div class="balance-row">
         <div class="balance">
-          <p class="field-label">Credits available</p>
+          <p class="field-label">Service balance · USD</p>
           <div class="big-number" id="balance-remaining" data-pixel="—"></div>
-          <div class="progress-row"><div id="overview-progress" class="progress" role="meter" aria-label="Credits remaining" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><svg viewBox="0 0 100 1" preserveAspectRatio="none" aria-hidden="true"><rect id="remaining-meter" x="0" y="0" width="0" height="1" fill="currentColor"/></svg></div><b id="balance-share">—</b></div>
+          <div class="progress-row"><div id="overview-progress" class="progress" role="meter" aria-label="Service balance remaining" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><svg viewBox="0 0 100 1" preserveAspectRatio="none" aria-hidden="true"><rect id="remaining-meter" x="0" y="0" width="0" height="1" fill="currentColor"/></svg></div><b id="balance-share">—</b></div>
           <dl class="credit-stats"><div><dt>Total granted</dt><dd id="balance-granted">—</dd></div><div><dt>Settled</dt><dd id="balance-used">—</dd></div></dl>
         </div>
       </div>
@@ -87,7 +89,7 @@
         </dl>
       </section>
       <section class="customer-credit-card" aria-labelledby="customer-credit-heading">
-        <h2 id="customer-credit-heading">Your credits</h2>
+        <h2 id="customer-credit-heading">Your service balance · USD</h2>
         <dl class="customer-credits">
           <div class="customer-available"><dt>Available</dt><dd id="customer-remaining">—</dd></div>
           <div><dt>Total granted</dt><dd id="customer-granted">—</dd></div>
@@ -97,15 +99,27 @@
         </dl>
         <p id="customer-status" class="customer-note" role="status" aria-live="polite">Sign in to load your account.</p>
       </section>
-      <div class="customer-footer"><p>Credits refresh automatically while this page is open.</p><a class="primary-button" href="#connect">Set up Claude Desktop</a></div>
+      <div class="customer-footer"><p>Balances refresh automatically while this page is open.</p><a class="primary-button" href="#connect">Set up Claude Desktop</a></div>
+    </section>
+    <section class="screen" data-screen="usage" hidden>
+      <h1>Usage</h1><p>New USD usage view. Previous charges remain in your balance; this list starts with the USD update.</p>
+      <p>Service dollars are prepaid usage units, not cash or DeepSeek account funds. $10 service balance has a $0.20 provider-cost ceiling.</p>
+      <button id="usage-refresh" class="outline-btn" type="button">Refresh usage</button><p id="usage-status" role="status"></p>
+      <div class="usage-scroll"><table class="usage-table"><thead><tr><th>Date</th><th>Service charge (USD)</th><th>Request</th></tr></thead><tbody id="usage-list"></tbody></table></div>
+    </section>
+    <section class="screen" data-screen="chat" hidden>
+      <div class="customer-heading"><h1>Simple chat</h1><button id="chat-new" type="button" class="outline-btn">New chat</button></div>
+      <p>No tools, memory, or project context. Only the latest three conversation turns are sent. Responses are limited to 512 tokens.</p>
+      <div id="chat-history" class="chat-history" role="log" aria-live="polite"></div>
+      <form id="chat-form"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="2000" rows="3" required></textarea><button id="chat-send" class="primary-button" type="submit">Send</button></form><p id="chat-status" role="status"></p>
     </section>
     <section class="screen docs-screen" data-screen="docs" hidden>
       <h1>Documentation</h1>
       <div class="docs-list">
 <article><div><h2>CLI connectors</h2><p>For terminal Claude Code, choose your system and run the launcher with your customer key.</p></div><div class="download-links"><a href="/downloads/apiduck-windows.zip" class="text-link" download>Windows ZIP</a><a href="/downloads/apiduck-linux.zip" class="text-link" download>Linux / macOS ZIP</a><a href="/downloads/SHA256SUMS.txt" class="text-link">Checksums</a></div></article>
         <article><div><h2>Connect Claude Desktop</h2><p>Open Account, then Inference configuration, and enter the gateway URL and your customer key.</p></div><a href="#connect" class="text-link">Watch the tutorial</a></article>
-        <article><div><h2>Your customer key</h2><p>Log in with your customer key to check your account and balance. The key is kept in memory only while this page stays open.</p></div><a href="#overview" class="text-link">Balance</a></article>
-        <article><div><h2>Credit balance</h2><p>Your balance comes from the account ledger and refreshes every five seconds while this page is visible.</p></div><a href="#overview" class="text-link">View overview</a></article>
+        <article><div><h2>Your customer key</h2><p>Log in with your customer key to check your account and balance. This browser remembers your key for seven days. Sign out on shared devices.</p></div><a href="#overview" class="text-link">Balance</a></article>
+        <article><div><h2>Service balance</h2><p>Your balance comes from the account ledger and refreshes every five seconds while this page is visible.</p></div><a href="#overview" class="text-link">View overview</a></article>
       </div>
     </section>
   </main>

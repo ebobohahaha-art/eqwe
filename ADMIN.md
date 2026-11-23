@@ -1,3 +1,5 @@
+> USD update: the portal and admin now show service dollars. 10,000,000 internal ledger units = $10 service balance, with the same $0.20 provider-cost cap. See [USD-BALANCE.md](USD-BALANCE.md). Command-line scripts still use internal ledger units.
+
 # Administration
 
 Open `/admin` on the same HTTPS site as the customer portal. The planned new URL is `https://oopengate.vercel.app/admin`; the domain move is performed separately.

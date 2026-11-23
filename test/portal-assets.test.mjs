@@ -36,7 +36,7 @@ test("New portal uses local scripts, styles, fonts and video under the existing 
 test("Customer navigation stays focused and connector downloads are linked", () => {
   const html = readFileSync(join(publicDir, "index.html"), "utf8");
   const nav = html.match(/<nav class="topnav" aria-label="Workspace navigation">([\s\S]*?)<\/nav>/)?.[1] ?? "";
-  assert.deepEqual([...nav.matchAll(/href="#([^"]+)"/g)].map((match) => match[1]), ["overview", "customer", "docs"]);
+  assert.deepEqual([...nav.matchAll(/href="#([^"]+)"/g)].map((match) => match[1]), ["overview", "customer", "usage", "chat", "docs"]);
   assert.doesNotMatch(html, /id="toolkit"|releases\/download\//);
   for (const file of ["apiduck-windows.zip", "apiduck-linux.zip", "SHA256SUMS.txt"]) {
     assert.ok(html.includes(`/downloads/${file}`));

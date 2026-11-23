@@ -66,3 +66,27 @@ test('A late sign-in response cannot resurrect a signed-out session', async () =
   await assert.rejects(pending, error => error.code === 'SESSION_CANCELLED');
   assert.equal(client.authenticated, false);
 });
+
+test('Remembered customer sign-in expires after a fixed week and logout removes it', async () => {
+  const values = new Map();
+  const storage = {getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+  let time=100000, calls=0;
+  const options={origin:'https://gateway.example',storage,now:()=>time,fetch:async()=>{calls++;return Response.json(account);}};
+  const first=createAccountClient(options);
+  await first.signIn(key);
+  assert.equal(values.size,1);
+  time+=6*86400000;
+  const returning=createAccountClient(options);
+  assert.ok(await returning.restore());
+  assert.equal(returning.authenticated,true);
+  time+=86400000;
+  await assert.rejects(returning.refresh(),/expired/);
+  assert.equal(returning.authenticated,false);
+  assert.equal(values.size,0);
+  const before=calls;
+  assert.equal(await createAccountClient(options).restore(),null);
+  assert.equal(calls,before);
+  await first.signIn(key);
+  first.signOut();
+  assert.equal(values.size,0);
+});
