@@ -18,3 +18,11 @@ test('Incomplete or error streams never produce a final billable message',async(
     await assert.rejects(consumeProviderStream(new Response(data),{progress:{input:0,outputBytes:0}}));
   }
 });
+
+test('Output-only cumulative deltas retain input and cache usage for settlement',async()=>{
+  const raw=frame('message_start',{message:{type:'message',role:'assistant',usage:{input_tokens:123,output_tokens:0,cache_read_input_tokens:456,cache_creation_input_tokens:0}}})+
+    frame('message_delta',{delta:{},usage:{output_tokens:4}})+
+    frame('message_delta',{delta:{stop_reason:'end_turn'},usage:{output_tokens:9}})+frame('message_stop',{});
+  const message=await consumeProviderStream(new Response(raw),{progress:{input:0,outputBytes:0}});
+  assert.deepEqual(message.usage,{input_tokens:123,output_tokens:9,cache_read_input_tokens:456,cache_creation_input_tokens:0});
+});
