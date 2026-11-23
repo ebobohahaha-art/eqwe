@@ -27,14 +27,25 @@ const staticFiles = new Map([
   ["/admin", ["admin.html", "text/html; charset=utf-8"]],
   ["/admin.html", ["admin.html", "text/html; charset=utf-8"]],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
+  ["/gateway-ui.js", ["gateway-ui.js", "text/javascript; charset=utf-8"]],
+  ["/account-client.mjs", ["account-client.mjs", "text/javascript; charset=utf-8"]],
+  ["/portal.css", ["portal.css", "text/css; charset=utf-8"]],
+  ["/media/claude-setup.mp4", ["media/claude-setup.mp4", "video/mp4"]],
+  ["/media/claude-setup-poster.jpg", ["media/claude-setup-poster.jpg", "image/jpeg"]],
+  ["/media/overview-illustration.png", ["media/overview-illustration.png", "image/png"]],
   ["/admin.js", ["admin.js", "text/javascript; charset=utf-8"]],
   ["/style.css", ["style.css", "text/css; charset=utf-8"]],
   ["/workspace.css", ["workspace.css", "text/css; charset=utf-8"]],
+  ["/fonts/pixelify-sans.ttf", ["fonts/pixelify-sans.ttf", "font/ttf"]],
   ["/fonts/bricolage-grotesque.woff2", ["fonts/bricolage-grotesque.woff2", "font/woff2"]],
   ["/admin.css", ["admin.css", "text/css; charset=utf-8"]],
   ["/workspace.js", ["workspace.js", "text/javascript; charset=utf-8"]],
   ["/preset-gears.js", ["preset-gears.js", "text/javascript; charset=utf-8"]],
 ]);
+for (const filename of ["jetbrains-mono-400.ttf", "jetbrains-mono-500.ttf",
+  "schibsted-grotesk-400.ttf", "schibsted-grotesk-500.ttf", "schibsted-grotesk-600.ttf", "schibsted-grotesk-700.ttf"]) {
+  staticFiles.set(`/fonts/${filename}`, [`fonts/${filename}`, "font/ttf"]);
+}
 const securityHeaders = {
   "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   "X-Content-Type-Options": "nosniff",
@@ -103,9 +114,29 @@ export function createRenderServer(publicOrigin) {
       }
       const [filename, type] = entry;
       const data = await readFile(join(publicDir, filename));
+      if (type === "video/mp4") {
+        headers["Accept-Ranges"] = "bytes";
+        if (req.method === "GET" && req.headers.range) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+          let start, end;
+          if (match && (match[1] || match[2])) {
+            start = match[1] ? Number(match[1]) : Math.max(0, data.length - Number(match[2]));
+            end = match[1] && match[2] ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
+          }
+          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= data.length) {
+            res.writeHead(416, { ...headers, "Content-Range": `bytes */${data.length}` }).end();
+            return;
+          }
+          res.writeHead(206, { ...headers, "Content-Type": type, "Content-Range": `bytes ${start}-${end}/${data.length}`,
+            "Content-Length": end - start + 1, "Cache-Control": "no-store" });
+          res.end(data.subarray(start, end + 1));
+          return;
+        }
+      }
       res.writeHead(200, {
         ...headers,
         "Content-Type": type,
+        "Content-Length": data.length,
         "Cache-Control": "no-store",
       });
       res.end(req.method === "HEAD" ? undefined : data);
