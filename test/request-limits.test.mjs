@@ -63,7 +63,6 @@ test('Images, documents, server tools, media placeholders and oversized/deep req
     {...base(),messages:[{role:'user',content:'x'.repeat(3500001)}]},
     {...base(),messages:[{role:'user',content:'<image>https://untrusted.test/huge.png</image>'}]},
     ...['image','document','server_tool_use','thinking'].map(type=>({...base(),messages:[{role:'user',content:[{type,source:{type:'url',url:'https://untrusted.test'}}]}]})),
-    {...base(),messages:[{role:'user',content:[{type:'tool_result',tool_use_id:'tool_1',content:[{type:'image'}]}]}]},
   ];
   let deep={}; for(let i=0;i<35;i++)deep={inner:deep};
   cases.push({...base(),tools:[{name:'deep',input_schema:deep}]});
@@ -146,6 +145,20 @@ test('Client tool discovery references preserve the tool result and available de
 });
 test('Unsupported tool-result blocks report only their type and position',()=>{
   const body=base();
-  body.messages=[{role:'user',content:[{type:'tool_result',tool_use_id:'call_1',content:[{type:'image',source:{data:'secret-data'}}]}]}];
-  assert.throws(()=>prepareRequest(body),e=>e.status===400 && e.message.includes('image (tool result)') && !e.message.includes('secret-data'));
+  body.messages=[{role:'user',content:[{type:'tool_result',tool_use_id:'call_1',content:[{type:'document',source:{data:'secret-data'}}]}]}];
+  assert.throws(()=>prepareRequest(body),e=>e.status===400 && e.message.includes('document (tool result)') && !e.message.includes('secret-data'));
+});
+
+
+test('Image tool results become explicit unviewed-image notices while preserving text',()=>{
+  const body=base();
+  body.messages.push({role:'assistant',content:[{type:'tool_use',id:'scene_1',name:'scene_preview',input:{}}]},
+    {role:'user',content:[{type:'tool_result',tool_use_id:'scene_1',content:[{type:'text',text:'Dragon: 12 objects'}, {type:'image',source:{type:'base64',media_type:'image/png',data:'private-image-bytes'}}]}]});
+  const result=prepareRequest(body);
+  const blocks=result.upstream.messages.at(-1).content[0].content;
+  assert.equal(blocks[0].text,'Dragon: 12 objects');
+  assert.match(blocks[1].text,/Do not claim to have inspected/);
+  assert.ok(!result.serialized.includes('private-image-bytes'));
+  assert.equal(result.upstream.messages.at(-1).content[0].tool_use_id,'scene_1');
+  assert.throws(()=>prepareRequest({...base(),messages:[{role:'user',content:[{type:'image'}]}]}),/image/);
 });
